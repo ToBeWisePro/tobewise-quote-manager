@@ -1,0 +1,48 @@
+# Node modules
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories
+/.pnp
+.pnp.js
+
+# Next.js build output
+/.next/
+/out/
+
+# Next.js static files
+/static/
+
+# Production build output
+/build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Firebase emulators and services
+firebase-debug.log
+firebase-debug.*
+
+# Miscellaneous
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS System Files
+._*
+.Spotlight-V100
+.Trashes
