@@ -1,101 +1,103 @@
-import Image from "next/image";
+"use client";
+import { useEffect, useState } from "react";
+import { db } from "./lib/firebase";
+import {
+  collection,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  doc,
+} from "firebase/firestore";
+import EditableQuoteRow from "./components/EditableQuoteRow";
+import AddQuotePopup, { Quote } from "./components/AddQuotePopup";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showPopup, setShowPopup] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const fetchQuotes = async () => {
+    const querySnapshot = await getDocs(collection(db, "quotes"));
+    const fetchedQuotes = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Quote[];
+    setQuotes(fetchedQuotes);
+  };
+
+  useEffect(() => {
+    fetchQuotes().then(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (updatedQuote: Quote) => {
+    const quoteRef = doc(db, "quotes", updatedQuote.id);
+    await updateDoc(quoteRef, updatedQuote);
+    setQuotes((prev) =>
+      prev.map((quote) => (quote.id === updatedQuote.id ? updatedQuote : quote))
+    );
+  };
+
+  const handleDelete = async (id: string) => {
+    const confirmed = confirm("Are you sure you want to delete this quote?");
+    if (!confirmed) return;
+
+    await deleteDoc(doc(db, "quotes", id));
+    setQuotes((prev) => prev.filter((quote) => quote.id !== id));
+  };
+
+  const handlePopupSave = async (newQuote: Quote) => {
+    const docRef = await addDoc(collection(db, "quotes"), newQuote);
+    setQuotes((prev) => [...prev, { ...newQuote, id: docRef.id }]);
+    setShowPopup(false);
+    fetchQuotes();
+  };
+
+  if (loading) return <div>Loading...</div>;
+
+  return (
+    <div className="p-4 bg-neutral-light min-h-screen text-foreground">
+      <div className="sticky top-0 bg-neutral-light z-20">
+        <h1 className="text-2xl font-bold mb-2 text-primary">Quote Manager</h1>
+        <button
+          className="bg-primary text-white hover:bg-secondary px-4 py-2 mb-4 rounded shadow"
+          onClick={() => setShowPopup(true)}
+        >
+          Add Quote
+        </button>
+        <div className="grid grid-cols-8 bg-secondary text-white p-2 rounded-t-md">
+          <div className="font-bold">ID</div>
+          <div className="font-bold">Author</div>
+          <div className="font-bold">Author Link</div>
+          <div className="font-bold">Contributed By</div>
+          <div className="font-bold">Quote</div>
+          <div className="font-bold">Subjects</div>
+          <div className="font-bold">Video Link</div>
+          <div className="font-bold">Actions</div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+
+      <div className="overflow-x-auto bg-white shadow-md rounded-md">
+        <table className="table-auto w-full">
+          <tbody>
+            {quotes.map((quote) => (
+              <EditableQuoteRow
+                key={quote.id}
+                quote={quote}
+                onSave={handleSave}
+                onDelete={handleDelete}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showPopup && (
+        <AddQuotePopup
+          onSave={handlePopupSave}
+          onDiscard={() => setShowPopup(false)}
+        />
+      )}
     </div>
   );
 }
