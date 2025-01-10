@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { db } from "./lib/firebase";
 import {
   collection,
@@ -13,6 +13,9 @@ import EditableQuoteRow from "./components/EditableQuoteRow";
 import AddQuotePopup, { Quote } from "./components/AddQuotePopup";
 
 export default function Home() {
+  const PASSWORD = process.env.NEXT_PUBLIC_APP_PASSWORD;
+  const [authenticated, setAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPopup, setShowPopup] = useState(false);
@@ -26,9 +29,14 @@ export default function Home() {
     setQuotes(fetchedQuotes);
   };
 
-  useEffect(() => {
-    fetchQuotes().then(() => setLoading(false));
-  }, []);
+  const handleLogin = () => {
+    if (password === PASSWORD) {
+      setAuthenticated(true);
+      fetchQuotes().then(() => setLoading(false));
+    } else {
+      alert("Incorrect password. Please try again.");
+    }
+  };
 
   const handleSave = async (updatedQuote: Quote) => {
     const quoteRef = doc(db, "quotes", updatedQuote.id);
@@ -52,6 +60,31 @@ export default function Home() {
     setShowPopup(false);
     fetchQuotes();
   };
+
+  if (!authenticated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
+        <div className="bg-white p-6 rounded-md shadow">
+          <h2 className="text-xl font-bold mb-4 text-primary text-center">
+            Enter Password
+          </h2>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="input input-bordered w-full mb-4"
+          />
+          <button
+            onClick={handleLogin}
+            className="bg-primary text-white px-4 py-2 rounded shadow w-full"
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return <div>Loading...</div>;
 
