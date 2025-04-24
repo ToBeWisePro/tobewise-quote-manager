@@ -1,112 +1,189 @@
 "use client";
 import { useState } from "react";
+import { Quote } from "./AddQuotePopup";
 
-type Quote = {
-  id: string;
-  author: string;
-  authorLink: string;
-  contributedBy: string;
-  quoteText: string;
-  subjects: string[];
-  videoLink: string;
-};
-
-type EditableQuoteRowProps = {
+interface EditableQuoteRowProps {
   quote: Quote;
-  onSave: (updatedQuote: Quote) => void;
+  onSave: (quote: Quote) => void;
   onDelete: (id: string) => void;
-};
+}
 
-export default function EditableQuoteRow({ quote, onSave, onDelete }: EditableQuoteRowProps) {
-  const [editedQuote, setEditedQuote] = useState(quote);
-  const [isEdited, setIsEdited] = useState(false);
-
-  const handleChange = (field: keyof Quote, value: any) => {
-    setEditedQuote((prev) => ({ ...prev, [field]: value }));
-    setIsEdited(true);
-  };
+export default function EditableQuoteRow({
+  quote,
+  onSave,
+  onDelete,
+}: EditableQuoteRowProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedQuote, setEditedQuote] = useState<Quote>({ ...quote });
 
   const handleSave = () => {
     onSave(editedQuote);
-    setIsEdited(false);
+    setIsEditing(false);
   };
 
   return (
-    <tr className="border-b border-neutral-light">
-      {/* ID Field - Readonly */}
-      <td className="p-2 text-sm text-gray-500 break-words">{editedQuote.id}</td>
-      {/* Author Field */}
-      <td className="p-2">
-        <input
-          type="text"
-          value={editedQuote.author || ""}
-          onChange={(e) => handleChange("author", e.target.value)}
-          className="input input-bordered w-full border-neutral-dark break-words whitespace-normal"
-        />
+    <tr className="border-t hover:bg-gray-50">
+      {/* Actions Column */}
+      <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-gray-200">
+        <div className="flex gap-2">
+          {isEditing ? (
+            <>
+              <button
+                onClick={handleSave}
+                className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setEditedQuote({ ...quote });
+                  setIsEditing(false);
+                }}
+                className="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => onDelete(quote.id)}
+                className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
       </td>
-      {/* Author Link Field */}
-      <td className="p-2">
-        <input
-          type="url"
-          value={editedQuote.authorLink || ""}
-          onChange={(e) => handleChange("authorLink", e.target.value)}
-          className="input input-bordered w-full border-neutral-dark break-words whitespace-normal"
-        />
+
+      {/* Quote Text Column */}
+      <td className="px-4 py-2 border-r border-gray-200">
+        {isEditing ? (
+          <textarea
+            value={editedQuote.quoteText}
+            onChange={(e) =>
+              setEditedQuote({ ...editedQuote, quoteText: e.target.value })
+            }
+            className="textarea textarea-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800">{quote.quoteText}</div>
+        )}
       </td>
-      {/* Contributed By Field */}
-      <td className="p-2">
-        <input
-          type="text"
-          value={editedQuote.contributedBy || ""}
-          onChange={(e) => handleChange("contributedBy", e.target.value)}
-          className="input input-bordered w-full border-neutral-dark break-words whitespace-normal"
-        />
+
+      {/* Author Column */}
+      <td className="px-4 py-2 border-r border-gray-200">
+        {isEditing ? (
+          <input
+            type="text"
+            value={editedQuote.author}
+            onChange={(e) =>
+              setEditedQuote({ ...editedQuote, author: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800 font-medium">{quote.author}</div>
+        )}
       </td>
-      {/* Quote Text Field */}
-      <td className="p-2">
-        <textarea
-          value={editedQuote.quoteText || ""}
-          onChange={(e) => handleChange("quoteText", e.target.value)}
-          className="textarea textarea-bordered w-full border-neutral-dark break-words whitespace-normal"
-        ></textarea>
+
+      {/* Author Link Column */}
+      <td className="px-4 py-2 border-r border-gray-200">
+        {isEditing ? (
+          <input
+            type="url"
+            value={editedQuote.authorLink || ""}
+            onChange={(e) =>
+              setEditedQuote({ ...editedQuote, authorLink: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800">
+            {quote.authorLink ? (
+              <a href={quote.authorLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                Link
+              </a>
+            ) : (
+              "-"
+            )}
+          </div>
+        )}
       </td>
-      {/* Subjects Field */}
-      <td className="p-2">
-        <input
-          type="text"
-          value={editedQuote.subjects.join(", ") || ""}
-          onChange={(e) =>
-            handleChange("subjects", e.target.value.split(",").map((s) => s.trim()))
-          }
-          className="input input-bordered w-full border-neutral-dark break-words whitespace-normal"
-        />
+
+      {/* Contributed By Column */}
+      <td className="px-4 py-2 border-r border-gray-200">
+        {isEditing ? (
+          <input
+            type="text"
+            value={editedQuote.contributedBy || ""}
+            onChange={(e) =>
+              setEditedQuote({ ...editedQuote, contributedBy: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800">{quote.contributedBy || "-"}</div>
+        )}
       </td>
-      {/* Video Link Field */}
-      <td className="p-2">
-        <input
-          type="url"
-          value={editedQuote.videoLink || ""}
-          onChange={(e) => handleChange("videoLink", e.target.value)}
-          className="input input-bordered w-full border-neutral-dark break-words whitespace-normal"
-        />
+
+      {/* Subjects Column */}
+      <td className="px-4 py-2 border-r border-gray-200">
+        {isEditing ? (
+          <input
+            type="text"
+            value={editedQuote.subjects.join(", ")}
+            onChange={(e) =>
+              setEditedQuote({
+                ...editedQuote,
+                subjects: e.target.value.split(",").map((s) => s.trim()),
+              })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800">
+            {quote.subjects.map((subject, index) => (
+              <span
+                key={index}
+                className="inline-block bg-gray-100 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2"
+              >
+                {subject}
+              </span>
+            ))}
+          </div>
+        )}
       </td>
-      {/* Action Buttons */}
-      <td className="p-2 flex gap-2">
-        <button
-          className={`btn px-4 py-1 rounded shadow ${
-            isEdited ? "bg-primary text-white" : "bg-neutral-light text-neutral-dark cursor-not-allowed"
-          }`}
-          onClick={handleSave}
-          disabled={!isEdited}
-        >
-          Save
-        </button>
-        <button
-          className="bg-error text-white px-4 py-1 rounded shadow hover:bg-red-700"
-          onClick={() => onDelete(quote.id)}
-        >
-          Delete
-        </button>
+
+      {/* Video Link Column */}
+      <td className="px-4 py-2">
+        {isEditing ? (
+          <input
+            type="url"
+            value={editedQuote.videoLink || ""}
+            onChange={(e) =>
+              setEditedQuote({ ...editedQuote, videoLink: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800">
+            {quote.videoLink ? (
+              <a href={quote.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                Link
+              </a>
+            ) : (
+              "-"
+            )}
+          </div>
+        )}
       </td>
     </tr>
   );
