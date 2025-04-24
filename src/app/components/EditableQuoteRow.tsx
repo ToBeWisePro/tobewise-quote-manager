@@ -24,7 +24,7 @@ export default function EditableQuoteRow({
   return (
     <tr className="border-t hover:bg-gray-50">
       {/* Actions Column */}
-      <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-gray-200">
+      <td className="px-4 py-2 sticky left-0 bg-white z-20 border-r border-gray-200">
         <div className="flex gap-2">
           {isEditing ? (
             <>

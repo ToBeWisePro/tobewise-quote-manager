@@ -8,17 +8,14 @@ import {
   deleteDoc,
   addDoc,
   doc,
-  writeBatch,
 } from "firebase/firestore";
 import EditableQuoteRow from "./components/EditableQuoteRow";
 import AddQuotePopup, { Quote } from "./components/AddQuotePopup";
-import CsvHandler from "./components/CsvHandler";
 import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
-  const PASSWORD = process.env.NEXT_PUBLIC_APP_PASSWORD;
   const [password, setPassword] = useState("");
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
@@ -55,8 +52,14 @@ export default function Home() {
         console.warn('Found invalid quotes:', invalidQuotes);
       }
       
-      setQuotes(validQuotes);
-      setFilteredQuotes(validQuotes);
+      // Sort quotes by author's first name
+      const sortedQuotes = validQuotes.sort((a, b) => {
+        const getFirstName = (name: string) => name.split(' ')[0].toLowerCase();
+        return getFirstName(a.author).localeCompare(getFirstName(b.author));
+      });
+      
+      setQuotes(sortedQuotes);
+      setFilteredQuotes(sortedQuotes);
     } catch (error) {
       console.error("Error fetching quotes:", error);
     } finally {
@@ -135,25 +138,6 @@ export default function Home() {
     fetchQuotes();
   };
 
-  const handleBulkImport = async (newQuotes: Quote[]) => {
-    try {
-      const batch = writeBatch(db);
-      const quotesCollection = collection(db, "quotes");
-      
-      newQuotes.forEach(quote => {
-        const docRef = doc(quotesCollection);
-        batch.set(docRef, quote);
-      });
-      
-      await batch.commit();
-      await fetchQuotes();
-      alert(`Successfully imported ${newQuotes.length} quotes!`);
-    } catch (error) {
-      console.error("Error importing quotes:", error);
-      alert("Error importing quotes. Please try again.");
-    }
-  };
-
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-neutral-light">
@@ -210,8 +194,8 @@ export default function Home() {
     <div className="flex min-h-screen bg-neutral-light">
       <SideNav />
       <main className="flex-1 ml-64 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="sticky top-0 bg-neutral-light z-20">
+        <div className="max-w-7xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
+          <div className="flex-none">
             <div className="flex gap-4 mb-4 items-center">
               <select
                 value={searchField}
@@ -253,14 +237,14 @@ export default function Home() {
                 Add Quote
               </button>
             </div>
+          </div>
 
-            <CsvHandler onImport={handleBulkImport} quotes={quotes} />
-
-            <div className="overflow-x-auto bg-white shadow-md rounded-md">
+          <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
+            <div className="h-full overflow-auto">
               <table className="table-auto w-full border-collapse">
                 <thead>
-                  <tr className="bg-gray-800 text-white">
-                    <th className="px-4 py-2 sticky left-0 bg-gray-800 z-20 border-r border-gray-600">Actions</th>
+                  <tr className="bg-gray-800 text-white sticky top-0 z-30">
+                    <th className="px-4 py-2 sticky left-0 bg-gray-800 z-40 border-r border-gray-600">Actions</th>
                     <th className="px-4 py-2 border-r border-gray-600">Quote Text</th>
                     <th className="px-4 py-2 border-r border-gray-600">Author</th>
                     <th className="px-4 py-2 border-r border-gray-600">Author Link</th>
@@ -281,14 +265,14 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
-
-            {showPopup && (
-              <AddQuotePopup
-                onSave={handlePopupSave}
-                onDiscard={() => setShowPopup(false)}
-              />
-            )}
           </div>
+
+          {showPopup && (
+            <AddQuotePopup
+              onSave={handlePopupSave}
+              onDiscard={() => setShowPopup(false)}
+            />
+          )}
         </div>
       </main>
     </div>
