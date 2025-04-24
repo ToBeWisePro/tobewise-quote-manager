@@ -40,18 +40,36 @@ export default function BulkUploadPage() {
     try {
       const batch = writeBatch(db);
       const quotesCollection = collection(db, "quotes");
+      const importedQuotes: Quote[] = [];
       
-      newQuotes.forEach(quote => {
+      // Create new documents and collect their references
+      const docRefs = newQuotes.map(quote => {
         const docRef = doc(quotesCollection);
         batch.set(docRef, quote);
+        return docRef;
       });
       
+      // Commit the batch
       await batch.commit();
+      
+      // Fetch the newly created documents to get their IDs
+      for (const docRef of docRefs) {
+        const docSnapshot = await getDocs(docRef);
+        if (docSnapshot.exists()) {
+          importedQuotes.push({
+            id: docRef.id,
+            ...docSnapshot.data()
+          } as Quote);
+        }
+      }
+      
+      // Refresh the quotes list
       await fetchQuotes();
-      alert(`Successfully imported ${newQuotes.length} quotes!`);
+      
+      return importedQuotes;
     } catch (error) {
       console.error("Error importing quotes:", error);
-      alert("Error importing quotes. Please try again.");
+      throw new Error("Error importing quotes. Please try again.");
     }
   };
 
