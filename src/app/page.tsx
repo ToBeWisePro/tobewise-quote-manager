@@ -17,8 +17,11 @@ export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPopup, setShowPopup] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchField, setSearchField] = useState("all");
 
   const fetchQuotes = async () => {
     const querySnapshot = await getDocs(collection(db, "quotes"));
@@ -26,7 +29,60 @@ export default function Home() {
       id: doc.id,
       ...doc.data(),
     })) as Quote[];
-    setQuotes(fetchedQuotes);
+    
+    // Filter out any quotes that are missing required fields
+    const validQuotes = fetchedQuotes.filter(quote => 
+      quote.author && 
+      quote.quoteText && 
+      quote.subjects && 
+      quote.subjects.length > 0
+    );
+    
+    // Log any invalid quotes for debugging
+    const invalidQuotes = fetchedQuotes.filter(quote => 
+      !quote.author || 
+      !quote.quoteText || 
+      !quote.subjects || 
+      quote.subjects.length === 0
+    );
+    
+    if (invalidQuotes.length > 0) {
+      console.warn('Found invalid quotes:', invalidQuotes);
+    }
+    
+    setQuotes(validQuotes);
+    setFilteredQuotes(validQuotes);
+  };
+
+  const handleSearch = (term: string, field: string) => {
+    if (!term.trim()) {
+      setFilteredQuotes(quotes);
+      return;
+    }
+
+    const filtered = quotes.filter((quote) => {
+      const searchTermLower = term.toLowerCase();
+      
+      if (field === "all") {
+        return (
+          quote.author.toLowerCase().includes(searchTermLower) ||
+          quote.quoteText.toLowerCase().includes(searchTermLower) ||
+          (quote.contributedBy?.toLowerCase().includes(searchTermLower) ?? false) ||
+          quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower))
+        );
+      } else if (field === "author") {
+        return quote.author.toLowerCase().includes(searchTermLower);
+      } else if (field === "quote") {
+        return quote.quoteText.toLowerCase().includes(searchTermLower);
+      } else if (field === "contributor") {
+        return quote.contributedBy?.toLowerCase().includes(searchTermLower) ?? false;
+      } else if (field === "subjects") {
+        return quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower));
+      }
+      return true;
+    });
+
+    setFilteredQuotes(filtered);
   };
 
   const handleLogin = () => {
@@ -92,12 +148,42 @@ export default function Home() {
     <div className="p-4 bg-neutral-light min-h-screen text-foreground">
       <div className="sticky top-0 bg-neutral-light z-20">
         <h1 className="text-2xl font-bold mb-2 text-primary">Quote Manager</h1>
-        <button
-          className="bg-primary text-white hover:bg-secondary px-4 py-2 mb-4 rounded shadow"
-          onClick={() => setShowPopup(true)}
-        >
-          Add Quote
-        </button>
+        
+        <div className="flex gap-4 mb-4">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search quotes..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                handleSearch(e.target.value, searchField);
+              }}
+              className="input input-bordered w-full"
+            />
+          </div>
+          <select
+            value={searchField}
+            onChange={(e) => {
+              setSearchField(e.target.value);
+              handleSearch(searchTerm, e.target.value);
+            }}
+            className="select select-bordered"
+          >
+            <option value="all">All Fields</option>
+            <option value="author">Author</option>
+            <option value="quote">Quote Text</option>
+            <option value="contributor">Contributor</option>
+            <option value="subjects">Subjects</option>
+          </select>
+          <button
+            className="bg-primary text-white hover:bg-secondary px-4 py-2 rounded shadow"
+            onClick={() => setShowPopup(true)}
+          >
+            Add Quote
+          </button>
+        </div>
+
         <div className="grid grid-cols-8 bg-secondary text-white p-2 rounded-t-md">
           <div className="font-bold">ID</div>
           <div className="font-bold">Author</div>
@@ -113,7 +199,7 @@ export default function Home() {
       <div className="overflow-x-auto bg-white shadow-md rounded-md">
         <table className="table-auto w-full">
           <tbody>
-            {quotes.map((quote) => (
+            {filteredQuotes.map((quote) => (
               <EditableQuoteRow
                 key={quote.id}
                 quote={quote}
