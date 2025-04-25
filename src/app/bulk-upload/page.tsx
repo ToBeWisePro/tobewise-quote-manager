@@ -7,11 +7,13 @@ import CsvHandler from "../components/CsvHandler";
 import { Quote } from "../components/AddQuotePopup";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
+import { useRouter } from "next/navigation";
 
 export default function BulkUploadPage() {
   const { authenticated, loading: authLoading } = useAuth();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const fetchQuotes = async () => {
     try {
@@ -85,15 +87,8 @@ export default function BulkUploadPage() {
   }
 
   if (!authenticated) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="bg-white p-6 rounded-md shadow">
-          <h2 className="text-xl font-bold mb-4 text-primary text-center">
-            Please log in to access this page
-          </h2>
-        </div>
-      </div>
-    );
+    router.push("/");
+    return null;
   }
 
   if (loading) {

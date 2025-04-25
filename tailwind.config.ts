@@ -10,7 +10,7 @@ export default {
     extend: {
       colors: {
         background: "#FFFFFF", // Main background color
-        foreground: "#111827", // Main foreground color
+        foreground: "#000000", // Changed from #111827 to #000000 for black text
         primary: "#2563EB", // Primary blue
         secondary: "#1E40AF", // Darker blue
         accent: "#10B981", // Green for accents

@@ -23,10 +23,5 @@ export function useAuth() {
     return false;
   };
 
-  const logout = () => {
-    sessionStorage.removeItem('isAuthenticated');
-    setAuthenticated(false);
-  };
-
-  return { authenticated, loading, login, logout };
+  return { authenticated, loading, login };
 } 

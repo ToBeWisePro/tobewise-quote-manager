@@ -47,3 +47,5 @@ firebase-debug.*
 .Spotlight-V100
 .Trashes
 node_modules
+.vercel
+.env*.local

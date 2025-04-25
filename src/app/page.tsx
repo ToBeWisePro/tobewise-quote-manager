@@ -6,13 +6,12 @@ import {
   getDocs,
   updateDoc,
   deleteDoc,
-  addDoc,
   doc,
 } from "firebase/firestore";
 import EditableQuoteRow from "./components/EditableQuoteRow";
-import AddQuotePopup, { Quote } from "./components/AddQuotePopup";
 import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
+import { Quote } from "./components/AddQuotePopup";
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
@@ -20,20 +19,25 @@ export default function Home() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showPopup, setShowPopup] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState("all");
 
   const fetchQuotes = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "quotes"));
-      const fetchedQuotes = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Quote[];
+      const fetchedQuotes = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        // Ensure we have a valid ID
+        const id = doc.id || `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        return {
+          id,
+          ...data,
+        };
+      }) as Quote[];
       
       // Filter out any quotes that are missing required fields
       const validQuotes = fetchedQuotes.filter(quote => 
+        quote.id && // Ensure ID exists
         quote.author && 
         quote.quoteText && 
         quote.subjects && 
@@ -42,6 +46,7 @@ export default function Home() {
       
       // Log any invalid quotes for debugging
       const invalidQuotes = fetchedQuotes.filter(quote => 
+        !quote.id ||
         !quote.author || 
         !quote.quoteText || 
         !quote.subjects || 
@@ -81,16 +86,26 @@ export default function Home() {
       return;
     }
 
+    const searchTermLower = term.toLowerCase();
+    console.log('Starting search with:', {
+      term,
+      field,
+      totalQuotes: quotes.length,
+      currentFilteredQuotes: filteredQuotes.length
+    });
+
     const filtered = quotes.filter((quote) => {
-      const searchTermLower = term.toLowerCase();
-      
       if (field === "all") {
-        return (
+        const matches = (
           quote.author.toLowerCase().includes(searchTermLower) ||
           quote.quoteText.toLowerCase().includes(searchTermLower) ||
           (quote.contributedBy?.toLowerCase().includes(searchTermLower) ?? false) ||
           quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower))
         );
+        if (matches) {
+          console.log('Match found:', quote.id, quote.author);
+        }
+        return matches;
       } else if (field === "author") {
         return quote.author.toLowerCase().includes(searchTermLower);
       } else if (field === "quote") {
@@ -100,7 +115,14 @@ export default function Home() {
       } else if (field === "subjects") {
         return quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower));
       }
-      return true;
+      return false;
+    });
+
+    console.log('Search complete:', {
+      term,
+      field,
+      matchesFound: filtered.length,
+      matchedIds: filtered.map(q => q.id)
     });
 
     setFilteredQuotes(filtered);
@@ -118,9 +140,7 @@ export default function Home() {
   const handleSave = async (updatedQuote: Quote) => {
     const quoteRef = doc(db, "quotes", updatedQuote.id);
     await updateDoc(quoteRef, updatedQuote);
-    setQuotes((prev) =>
-      prev.map((quote) => (quote.id === updatedQuote.id ? updatedQuote : quote))
-    );
+    await fetchQuotes();
   };
 
   const handleDelete = async (id: string) => {
@@ -128,14 +148,7 @@ export default function Home() {
     if (!confirmed) return;
 
     await deleteDoc(doc(db, "quotes", id));
-    setQuotes((prev) => prev.filter((quote) => quote.id !== id));
-  };
-
-  const handlePopupSave = async (newQuote: Quote) => {
-    const docRef = await addDoc(collection(db, "quotes"), newQuote);
-    setQuotes((prev) => [...prev, { ...newQuote, id: docRef.id }]);
-    setShowPopup(false);
-    fetchQuotes();
+    await fetchQuotes();
   };
 
   if (authLoading) {
@@ -196,14 +209,14 @@ export default function Home() {
       <main className="flex-1 ml-64 p-8">
         <div className="max-w-7xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
           <div className="flex-none">
-            <div className="flex gap-4 mb-4 items-center">
+            <div className="flex flex-col sm:flex-row gap-4 mb-4 items-start sm:items-center">
               <select
                 value={searchField}
                 onChange={(e) => {
                   setSearchField(e.target.value);
                   handleSearch(searchTerm, e.target.value);
                 }}
-                className="select select-bordered bg-white border-gray-300 text-gray-800 focus:border-primary focus:ring-2 focus:ring-primary"
+                className="select select-bordered bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary w-full sm:w-auto"
               >
                 <option value="all">All Fields</option>
                 <option value="author">Author</option>
@@ -212,16 +225,17 @@ export default function Home() {
                 <option value="subjects">Subjects</option>
               </select>
               
-              <div className="relative flex-1">
+              <div className="relative w-full sm:w-auto sm:flex-1">
                 <input
                   type="text"
                   placeholder="Search quotes..."
                   value={searchTerm}
                   onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    handleSearch(e.target.value, searchField);
+                    const newSearchTerm = e.target.value;
+                    setSearchTerm(newSearchTerm);
+                    handleSearch(newSearchTerm, searchField);
                   }}
-                  className="input input-bordered w-full pl-10 bg-white border-gray-300 text-gray-800 focus:border-primary focus:ring-2 focus:ring-primary"
+                  className="input input-bordered w-full pl-10 bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary"
                 />
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -229,50 +243,38 @@ export default function Home() {
                   </svg>
                 </div>
               </div>
-
-              <button
-                className="bg-primary text-white hover:bg-secondary px-4 py-2 rounded-lg shadow transition-colors duration-200"
-                onClick={() => setShowPopup(true)}
-              >
-                Add Quote
-              </button>
             </div>
           </div>
 
           <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
             <div className="h-full overflow-auto">
-              <table className="table-auto w-full border-collapse">
-                <thead>
-                  <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                    <th className="px-4 py-2 sticky left-0 bg-gray-800 z-40 border-r border-gray-600">Actions</th>
-                    <th className="px-4 py-2 border-r border-gray-600">Quote Text</th>
-                    <th className="px-4 py-2 border-r border-gray-600">Author</th>
-                    <th className="px-4 py-2 border-r border-gray-600">Author Link</th>
-                    <th className="px-4 py-2 border-r border-gray-600">Contributed By</th>
-                    <th className="px-4 py-2 border-r border-gray-600">Subjects</th>
-                    <th className="px-4 py-2">Video Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredQuotes.map((quote) => (
-                    <EditableQuoteRow
-                      key={quote.id}
-                      quote={quote}
-                      onSave={handleSave}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </tbody>
-              </table>
+              <div className="min-w-[800px] max-w-full">
+                <table className="table-auto w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-800 text-white sticky top-0 z-30">
+                      <th className="px-4 py-2 sticky left-0 bg-gray-800 z-40 border-r border-gray-600 w-[10%]">Actions</th>
+                      <th className="px-4 py-2 border-r border-gray-600 w-[25%]">Quote Text</th>
+                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author</th>
+                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author Link</th>
+                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Contributed By</th>
+                      <th className="px-4 py-2 border-r border-gray-600 w-[10%]">Subjects</th>
+                      <th className="px-4 py-2 w-[10%]">Video Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredQuotes.map((quote) => (
+                      <EditableQuoteRow
+                        key={quote.id}
+                        quote={quote}
+                        onSave={handleSave}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-
-          {showPopup && (
-            <AddQuotePopup
-              onSave={handlePopupSave}
-              onDiscard={() => setShowPopup(false)}
-            />
-          )}
         </div>
       </main>
     </div>
