@@ -25,10 +25,22 @@ export default function Home() {
   const fetchQuotes = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "quotes"));
+      const idMap = new Map(); // Track used IDs and their quotes
+      
       const fetchedQuotes = querySnapshot.docs.map((doc) => {
         const data = doc.data();
-        // Ensure we have a valid ID
-        const id = doc.id || `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const id = doc.id;
+        
+        // Track quotes by ID for debugging
+        if (idMap.has(id)) {
+          console.warn(`Duplicate ID found: ${id}`, {
+            existing: idMap.get(id),
+            new: data
+          });
+        } else {
+          idMap.set(id, data);
+        }
+        
         return {
           id,
           ...data,
@@ -262,9 +274,9 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredQuotes.map((quote) => (
+                    {filteredQuotes.map((quote, index) => (
                       <EditableQuoteRow
-                        key={quote.id}
+                        key={`${quote.id}-${index}`}
                         quote={quote}
                         onSave={handleSave}
                         onDelete={handleDelete}

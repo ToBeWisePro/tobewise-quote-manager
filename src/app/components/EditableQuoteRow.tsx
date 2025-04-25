@@ -150,9 +150,9 @@ export default function EditableQuoteRow({
           />
         ) : (
           <div className="text-gray-800 flex flex-wrap gap-1 max-h-[100px] overflow-y-auto max-w-full">
-            {quote.subjects.map((subject) => (
+            {quote.subjects.map((subject, index) => (
               <span
-                key={subject}
+                key={`${subject}-${index}`}
                 className="inline-block bg-gray-100 rounded-full px-2 py-0.5 text-xs font-semibold text-gray-700 truncate max-w-full"
               >
                 {subject}
