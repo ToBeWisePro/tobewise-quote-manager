@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { db } from "../lib/firebase";
 import { collection, getDocs, writeBatch, doc } from "firebase/firestore";
 import CsvHandler from "../components/CsvHandler";
-import { Quote } from "../components/AddQuotePopup";
+import { Quote } from "../types/Quote";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import { useRouter } from "next/navigation";

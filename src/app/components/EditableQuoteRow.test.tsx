@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import EditableQuoteRow from './EditableQuoteRow';
-import { Quote } from './AddQuotePopup';
+import { Quote } from '../types/Quote';
 
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
@@ -26,7 +26,7 @@ const mockQuote: Quote = {
 };
 
 describe('EditableQuoteRow', () => {
-  const renderComponent = () => {
+  const renderComponent = (showContributedBy = false) => {
     return render(
       <table>
         <tbody>
@@ -35,6 +35,7 @@ describe('EditableQuoteRow', () => {
             onSave={jest.fn()}
             onDelete={jest.fn()}
             columnWidths={{ quote: 200, author: 100, authorLink: 100, contributedBy: 100, subjects: 80, videoLink: 80 }}
+            showContributedBy={showContributedBy}
           />
         </tbody>
       </table>
@@ -45,6 +46,16 @@ describe('EditableQuoteRow', () => {
     renderComponent();
     expect(screen.getByText('Test Author')).toBeInTheDocument();
     expect(screen.getByText('This is a test quote.')).toBeInTheDocument();
+  });
+
+  it('hides contributedBy column by default', () => {
+    renderComponent();
+    expect(screen.queryByText('Tester')).not.toBeInTheDocument();
+  });
+
+  it('shows contributedBy column when showContributedBy is true', () => {
+    renderComponent(true);
+    expect(screen.getByText('Tester')).toBeInTheDocument();
   });
 
   it('switches to edit mode and allows editing', async () => {
@@ -59,6 +70,18 @@ describe('EditableQuoteRow', () => {
     expect(quoteInput).toBeInTheDocument();
   });
 
+  it('shows contributedBy field in edit mode only when showContributedBy is true', () => {
+    // First check when showContributedBy is false
+    renderComponent(false);
+    fireEvent.click(screen.getByText('Edit'));
+    expect(screen.queryByDisplayValue('Tester')).not.toBeInTheDocument();
+
+    // Then check when showContributedBy is true
+    renderComponent(true);
+    fireEvent.click(screen.getByText('Edit'));
+    expect(screen.getByDisplayValue('Tester')).toBeInTheDocument();
+  });
+
   it('calls onSave with updated data', async () => {
     const onSave = jest.fn();
     render(
@@ -69,6 +92,7 @@ describe('EditableQuoteRow', () => {
             onSave={onSave}
             onDelete={jest.fn()}
             columnWidths={{ quote: 200, author: 100, authorLink: 100, contributedBy: 100, subjects: 80, videoLink: 80 }}
+            showContributedBy={true}
           />
         </tbody>
       </table>
@@ -94,6 +118,7 @@ describe('EditableQuoteRow', () => {
             onSave={jest.fn()}
             onDelete={onDelete}
             columnWidths={{ quote: 200, author: 100, authorLink: 100, contributedBy: 100, subjects: 80, videoLink: 80 }}
+            showContributedBy={false}
           />
         </tbody>
       </table>

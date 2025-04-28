@@ -11,7 +11,7 @@ import {
 import EditableQuoteRow from "./components/EditableQuoteRow";
 import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
-import { Quote } from "./components/AddQuotePopup";
+import { Quote } from "./types/Quote";
 import ResizableTableHeader from "./components/ResizableTableHeader";
 import Image from "next/image";
 
@@ -161,7 +161,17 @@ export default function Home() {
 
   const handleSave = async (updatedQuote: Quote) => {
     const quoteRef = doc(db, "quotes", updatedQuote.id);
-    await updateDoc(quoteRef, updatedQuote);
+    // Convert Quote to plain object for Firestore
+    const quoteData = {
+      author: updatedQuote.author,
+      quoteText: updatedQuote.quoteText,
+      subjects: updatedQuote.subjects,
+      authorLink: updatedQuote.authorLink,
+      contributedBy: updatedQuote.contributedBy,
+      videoLink: updatedQuote.videoLink,
+      // Don't include id as it's the document ID
+    };
+    await updateDoc(quoteRef, quoteData);
     await fetchQuotes();
   };
 
@@ -292,7 +302,7 @@ export default function Home() {
                     <col style={{ width: `${columnWidths.quote}px` }} />
                     <col style={{ width: `${columnWidths.author}px` }} />
                     <col style={{ width: `${columnWidths.authorLink}px` }} />
-                    <col style={{ width: `${columnWidths.contributedBy}px` }} />
+                    {searchField === 'contributor' && <col style={{ width: `${columnWidths.contributedBy}px` }} />}
                     <col style={{ width: `${columnWidths.subjects}px` }} />
                     <col style={{ width: `${columnWidths.videoLink}px` }} />
                   </colgroup>
@@ -319,13 +329,15 @@ export default function Home() {
                       >
                         Author Link
                       </ResizableTableHeader>
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.contributedBy}
-                        minWidth={100}
-                        onResize={handleColumnResize('contributedBy')}
-                      >
-                        Contributed By
-                      </ResizableTableHeader>
+                      {searchField === 'contributor' && (
+                        <ResizableTableHeader
+                          initialWidth={columnWidths.contributedBy}
+                          minWidth={100}
+                          onResize={handleColumnResize('contributedBy')}
+                        >
+                          Contributed By
+                        </ResizableTableHeader>
+                      )}
                       <ResizableTableHeader
                         initialWidth={columnWidths.subjects}
                         minWidth={80}
@@ -351,6 +363,7 @@ export default function Home() {
                         onSave={handleSave}
                         onDelete={handleDelete}
                         columnWidths={columnWidths}
+                        showContributedBy={searchField === 'contributor'}
                       />
                     ))}
                   </tbody>

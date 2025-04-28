@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Quote } from './AddQuotePopup';
+import { Quote } from '../types/Quote';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
