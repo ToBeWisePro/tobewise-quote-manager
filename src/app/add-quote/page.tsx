@@ -6,7 +6,6 @@ import { collection, addDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
-import { Quote } from "../components/AddQuotePopup";
 
 export default function AddQuotePage() {
   const router = useRouter();

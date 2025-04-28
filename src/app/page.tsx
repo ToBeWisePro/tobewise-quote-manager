@@ -218,7 +218,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen bg-neutral-light">
       <SideNav />
-      <main className="flex-1 ml-64 p-8">
+      <main className="flex-1 ml-64 p-8 overflow-x-hidden">
         <div className="max-w-7xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
           <div className="flex-none">
             <div className="flex flex-col sm:flex-row gap-4 mb-4 items-start sm:items-center">
@@ -259,13 +259,12 @@ export default function Home() {
           </div>
 
           <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
-            <div className="h-full overflow-auto">
-              <div className="min-w-[800px] max-w-full">
+            <div className="h-full overflow-y-auto overflow-x-hidden">
+              <div className="min-w-[800px] max-w-full overflow-x-auto">
                 <table className="table-auto w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                      <th className="px-4 py-2 sticky left-0 bg-gray-800 z-40 border-r border-gray-600 w-[10%]">Actions</th>
-                      <th className="px-4 py-2 border-r border-gray-600 w-[25%]">Quote Text</th>
+                      <th className="px-4 py-2 sticky left-0 bg-gray-800 z-50 border-r-2 border-gray-400 w-[35%]">Quote</th>
                       <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author</th>
                       <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author Link</th>
                       <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Contributed By</th>

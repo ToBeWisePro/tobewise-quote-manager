@@ -23,59 +23,57 @@ export default function EditableQuoteRow({
 
   return (
     <tr className="border-t hover:bg-gray-50">
-      {/* Actions Column */}
-      <td className="px-4 py-2 sticky left-0 bg-white z-20 border-r border-gray-200 w-[10%]">
-        <div className="flex gap-2">
+      {/* Combined Actions and Quote Text Column */}
+      <td className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300 w-[35%]">
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditedQuote({ ...quote });
+                    setIsEditing(false);
+                  }}
+                  className="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => onDelete(quote.id)}
+                  className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
           {isEditing ? (
-            <>
-              <button
-                onClick={handleSave}
-                className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setEditedQuote({ ...quote });
-                  setIsEditing(false);
-                }}
-                className="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-            </>
+            <textarea
+              value={editedQuote.quoteText}
+              onChange={(e) =>
+                setEditedQuote({ ...editedQuote, quoteText: e.target.value })
+              }
+              className="textarea textarea-bordered w-full text-gray-800 min-h-[100px]"
+            />
           ) : (
-            <>
-              <button
-                onClick={() => setIsEditing(true)}
-                className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => onDelete(quote.id)}
-                className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
-              >
-                Delete
-              </button>
-            </>
+            <div className="text-gray-800 break-words max-h-[200px] overflow-y-auto">{quote.quoteText}</div>
           )}
         </div>
-      </td>
-
-      {/* Quote Text Column */}
-      <td className="px-4 py-2 border-r border-gray-200 w-[25%]">
-        {isEditing ? (
-          <textarea
-            value={editedQuote.quoteText}
-            onChange={(e) =>
-              setEditedQuote({ ...editedQuote, quoteText: e.target.value })
-            }
-            className="textarea textarea-bordered w-full text-gray-800 min-h-[100px]"
-          />
-        ) : (
-          <div className="text-gray-800 break-words max-h-[200px] overflow-y-auto">{quote.quoteText}</div>
-        )}
       </td>
 
       {/* Author Column */}
