@@ -13,10 +13,12 @@ export default function BulkUploadPage() {
   const { authenticated, loading: authLoading } = useAuth();
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchQuotes = async () => {
     try {
+      setError(null);
       const querySnapshot = await getDocs(collection(db, "quotes"));
       const fetchedQuotes = querySnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -25,6 +27,7 @@ export default function BulkUploadPage() {
       setQuotes(fetchedQuotes);
     } catch (error) {
       console.error("Error fetching quotes:", error);
+      setError("Error loading quotes. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -40,6 +43,7 @@ export default function BulkUploadPage() {
 
   const handleBulkImport = async (newQuotes: Quote[]) => {
     try {
+      setError(null);
       const batch = writeBatch(db);
       const quotesCollection = collection(db, "quotes");
       const importedQuotes: Quote[] = [];
@@ -71,7 +75,8 @@ export default function BulkUploadPage() {
       return importedQuotes;
     } catch (error) {
       console.error("Error importing quotes:", error);
-      throw new Error("Error importing quotes. Please try again.");
+      setError("Error importing quotes. Please try again later.");
+      throw error;
     }
   };
 
@@ -113,6 +118,11 @@ export default function BulkUploadPage() {
       <main className="flex-1 ml-64 p-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-primary mb-8">Bulk Upload Quotes</h1>
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+              {error}
+            </div>
+          )}
           <div className="bg-white rounded-lg shadow-md p-6">
             <CsvHandler onImport={handleBulkImport} quotes={quotes} />
           </div>
