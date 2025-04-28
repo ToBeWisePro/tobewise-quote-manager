@@ -13,6 +13,7 @@ import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
 import { Quote } from "./components/AddQuotePopup";
 import ResizableTableHeader from "./components/ResizableTableHeader";
+import Image from "next/image";
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
@@ -194,6 +195,15 @@ export default function Home() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-neutral-light">
         <div className="bg-white p-6 rounded-md shadow">
+          <div className="flex items-center justify-center mb-4">
+            <Image
+              src="/images/image.png"
+              alt="Quote Manager Icon"
+              width={64}
+              height={64}
+              className="rounded-full"
+            />
+          </div>
           <h2 className="text-xl font-bold mb-4 text-primary text-center">
             Enter Password
           </h2>
@@ -202,7 +212,7 @@ export default function Home() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
-            className="input input-bordered w-full mb-4"
+            className="input input-bordered w-full mb-4 text-black"
           />
           <button
             onClick={handleLogin}
