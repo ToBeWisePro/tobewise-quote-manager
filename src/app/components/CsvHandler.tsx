@@ -28,6 +28,15 @@ interface ImportedQuote extends Quote {
   id: string;
 }
 
+type CsvRow = {
+  author: string;
+  quoteText: string;
+  authorLink?: string;
+  contributedBy?: string;
+  subjects: string | string[];
+  videoLink?: string;
+};
+
 export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   const [previewData, setPreviewData] = useState<EditableQuote[]>([]);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
@@ -136,13 +145,13 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
           const errors: ValidationError[] = [];
           const validQuotes: EditableQuote[] = [];
 
-          results.data.forEach((row: any, index: number) => {
+          results.data.forEach((row: CsvRow, _index: number) => {
             const isHeaderRow = Object.entries(row).every(([key, value]) => 
               typeof value === 'string' && value.trim().toLowerCase() === key.toLowerCase()
             );
             if (isHeaderRow) return;
 
-            const error = validateQuote(row, index);
+            const error = validateQuote(row, _index);
             if (error) {
               errors.push(error);
             } else {

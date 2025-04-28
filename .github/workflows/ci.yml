@@ -45,8 +45,10 @@ jobs:
     - name: Install dependencies
       run: pnpm install
     
-    - name: Run linting
-      run: pnpm run lint
+    - name: Run linting and fix
+      run: |
+        pnpm run lint:fix
+        pnpm run lint
     
     - name: Run unit tests
       run: pnpm test

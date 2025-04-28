@@ -7,7 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 
 export default function SideNav() {
   const pathname = usePathname();
-  const { authenticated } = useAuth();
+  const { /* authenticated, */ } = useAuth();
 
   const isActive = (path: string) => pathname === path;
 
@@ -16,7 +16,7 @@ export default function SideNav() {
       <div className="p-4">
         <div className="flex items-center gap-2 mb-8">
           <Image
-            src="/images/icon.png"
+            src="/images/image.png"
             alt="Quote Manager Icon"
             width={32}
             height={32}
