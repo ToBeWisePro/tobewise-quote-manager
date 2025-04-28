@@ -12,6 +12,7 @@ import EditableQuoteRow from "./components/EditableQuoteRow";
 import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
 import { Quote } from "./components/AddQuotePopup";
+import ResizableTableHeader from "./components/ResizableTableHeader";
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
@@ -21,6 +22,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState("all");
+  const [columnWidths, setColumnWidths] = useState({
+    quote: 280, // 35% of 800px
+    author: 120, // 15% of 800px
+    authorLink: 120, // 15% of 800px
+    contributedBy: 120, // 15% of 800px
+    subjects: 80, // 10% of 800px
+    videoLink: 80, // 10% of 800px
+  });
 
   const fetchQuotes = async () => {
     try {
@@ -163,6 +172,13 @@ export default function Home() {
     await fetchQuotes();
   };
 
+  const handleColumnResize = (column: keyof typeof columnWidths) => (width: number) => {
+    setColumnWidths(prev => ({
+      ...prev,
+      [column]: width
+    }));
+  };
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-neutral-light">
@@ -260,16 +276,61 @@ export default function Home() {
 
           <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
             <div className="h-full overflow-y-auto overflow-x-hidden">
-              <div className="min-w-[800px] max-w-full overflow-x-auto">
-                <table className="table-auto w-full border-collapse">
+              <div className="w-full overflow-x-auto">
+                <table className="table-fixed border-collapse w-full">
+                  <colgroup>
+                    <col style={{ width: `${columnWidths.quote}px` }} />
+                    <col style={{ width: `${columnWidths.author}px` }} />
+                    <col style={{ width: `${columnWidths.authorLink}px` }} />
+                    <col style={{ width: `${columnWidths.contributedBy}px` }} />
+                    <col style={{ width: `${columnWidths.subjects}px` }} />
+                    <col style={{ width: `${columnWidths.videoLink}px` }} />
+                  </colgroup>
                   <thead>
                     <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                      <th className="px-4 py-2 sticky left-0 bg-gray-800 z-50 border-r-2 border-gray-400 w-[35%]">Quote</th>
-                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author</th>
-                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Author Link</th>
-                      <th className="px-4 py-2 border-r border-gray-600 w-[15%]">Contributed By</th>
-                      <th className="px-4 py-2 border-r border-gray-600 w-[10%]">Subjects</th>
-                      <th className="px-4 py-2 w-[10%]">Video Link</th>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.quote}
+                        minWidth={200}
+                        onResize={handleColumnResize('quote')}
+                      >
+                        Quote
+                      </ResizableTableHeader>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.author}
+                        minWidth={100}
+                        onResize={handleColumnResize('author')}
+                      >
+                        Author
+                      </ResizableTableHeader>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.authorLink}
+                        minWidth={100}
+                        onResize={handleColumnResize('authorLink')}
+                      >
+                        Author Link
+                      </ResizableTableHeader>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.contributedBy}
+                        minWidth={100}
+                        onResize={handleColumnResize('contributedBy')}
+                      >
+                        Contributed By
+                      </ResizableTableHeader>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.subjects}
+                        minWidth={80}
+                        onResize={handleColumnResize('subjects')}
+                      >
+                        Subjects
+                      </ResizableTableHeader>
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.videoLink}
+                        minWidth={80}
+                        onResize={handleColumnResize('videoLink')}
+                        isLastColumn
+                      >
+                        Video Link
+                      </ResizableTableHeader>
                     </tr>
                   </thead>
                   <tbody>
@@ -279,6 +340,7 @@ export default function Home() {
                         quote={quote}
                         onSave={handleSave}
                         onDelete={handleDelete}
+                        columnWidths={columnWidths}
                       />
                     ))}
                   </tbody>

@@ -1,17 +1,26 @@
 "use client";
 import { useState } from "react";
-import { Quote } from "./AddQuotePopup";
+import { Quote } from "../components/AddQuotePopup";
 
 interface EditableQuoteRowProps {
   quote: Quote;
   onSave: (quote: Quote) => void;
   onDelete: (id: string) => void;
+  columnWidths: {
+    quote: number;
+    author: number;
+    authorLink: number;
+    contributedBy: number;
+    subjects: number;
+    videoLink: number;
+  };
 }
 
 export default function EditableQuoteRow({
   quote,
   onSave,
   onDelete,
+  columnWidths,
 }: EditableQuoteRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedQuote, setEditedQuote] = useState<Quote>({ ...quote });
@@ -24,7 +33,10 @@ export default function EditableQuoteRow({
   return (
     <tr className="border-t hover:bg-gray-50">
       {/* Combined Actions and Quote Text Column */}
-      <td className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300 w-[35%]">
+      <td 
+        className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300"
+        style={{ width: `${columnWidths.quote}px` }}
+      >
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
             {isEditing ? (
@@ -71,13 +83,18 @@ export default function EditableQuoteRow({
               className="textarea textarea-bordered w-full text-gray-800 min-h-[100px]"
             />
           ) : (
-            <div className="text-gray-800 break-words max-h-[200px] overflow-y-auto">{quote.quoteText}</div>
+            <div className="text-gray-800 break-words whitespace-normal max-h-[200px] overflow-y-auto">
+              {quote.quoteText}
+            </div>
           )}
         </div>
       </td>
 
       {/* Author Column */}
-      <td className="px-4 py-2 border-r border-gray-200 w-[15%]">
+      <td 
+        className="px-4 py-2 border-r border-gray-200"
+        style={{ width: `${columnWidths.author}px` }}
+      >
         {isEditing ? (
           <input
             type="text"
@@ -88,12 +105,17 @@ export default function EditableQuoteRow({
             className="input input-bordered w-full text-gray-800"
           />
         ) : (
-          <div className="text-gray-800 font-medium break-words max-h-[100px] overflow-y-auto">{quote.author}</div>
+          <div className="text-gray-800 font-medium break-words whitespace-normal max-h-[100px] overflow-y-auto">
+            {quote.author}
+          </div>
         )}
       </td>
 
       {/* Author Link Column */}
-      <td className="px-4 py-2 border-r border-gray-200 w-[15%]">
+      <td 
+        className="px-4 py-2 border-r border-gray-200"
+        style={{ width: `${columnWidths.authorLink}px` }}
+      >
         {isEditing ? (
           <input
             type="url"
@@ -104,7 +126,7 @@ export default function EditableQuoteRow({
             className="input input-bordered w-full text-gray-800"
           />
         ) : (
-          <div className="text-gray-800 break-words max-h-[100px] overflow-y-auto">
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.authorLink ? (
               <a href={quote.authorLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
                 Link
@@ -117,7 +139,10 @@ export default function EditableQuoteRow({
       </td>
 
       {/* Contributed By Column */}
-      <td className="px-4 py-2 border-r border-gray-200 w-[15%]">
+      <td 
+        className="px-4 py-2 border-r border-gray-200"
+        style={{ width: `${columnWidths.contributedBy}px` }}
+      >
         {isEditing ? (
           <input
             type="text"
@@ -128,12 +153,17 @@ export default function EditableQuoteRow({
             className="input input-bordered w-full text-gray-800"
           />
         ) : (
-          <div className="text-gray-800 break-words max-h-[100px] overflow-y-auto">{quote.contributedBy || "-"}</div>
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
+            {quote.contributedBy || "-"}
+          </div>
         )}
       </td>
 
       {/* Subjects Column */}
-      <td className="px-4 py-2 border-r border-gray-200 w-[10%]">
+      <td 
+        className="px-4 py-2 border-r border-gray-200"
+        style={{ width: `${columnWidths.subjects}px` }}
+      >
         {isEditing ? (
           <input
             type="text"
@@ -147,21 +177,17 @@ export default function EditableQuoteRow({
             className="input input-bordered w-full text-gray-800"
           />
         ) : (
-          <div className="text-gray-800 flex flex-wrap gap-1 max-h-[100px] overflow-y-auto max-w-full">
-            {quote.subjects.map((subject, index) => (
-              <span
-                key={`${subject}-${index}`}
-                className="inline-block bg-gray-100 rounded-full px-2 py-0.5 text-xs font-semibold text-gray-700 truncate max-w-full"
-              >
-                {subject}
-              </span>
-            ))}
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
+            {quote.subjects.join(", ")}
           </div>
         )}
       </td>
 
       {/* Video Link Column */}
-      <td className="px-4 py-2 w-[10%]">
+      <td 
+        className="px-4 py-2"
+        style={{ width: `${columnWidths.videoLink}px` }}
+      >
         {isEditing ? (
           <input
             type="url"
@@ -172,7 +198,7 @@ export default function EditableQuoteRow({
             className="input input-bordered w-full text-gray-800"
           />
         ) : (
-          <div className="text-gray-800 break-words max-h-[100px] overflow-y-auto">
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.videoLink ? (
               <a href={quote.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
                 Link
