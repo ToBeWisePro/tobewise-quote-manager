@@ -6,12 +6,13 @@ import { collection, addDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
+import { Quote } from "../types/Quote";
 
 export default function AddQuotePage() {
   const router = useRouter();
   const { authenticated, loading: authLoading } = useAuth();
-  const [newQuote, setNewQuote] = useState<Quote>({
-    id: "",
+  const [error, setError] = useState<string | null>(null);
+  const [newQuote, setNewQuote] = useState<Omit<Quote, 'id'>>({
     author: "",
     quoteText: "",
     subjects: [],
@@ -20,17 +21,18 @@ export default function AddQuotePage() {
 
   const handleSave = async () => {
     try {
+      setError(null);
       // Generate a unique ID for the new quote
-      const newQuoteWithId = {
+      const quoteData = {
         ...newQuote,
         id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
       
-      await addDoc(collection(db, "quotes"), newQuoteWithId);
+      await addDoc(collection(db, "quotes"), quoteData);
       router.push("/");
     } catch (error) {
       console.error("Error saving the quote:", error);
-      alert("Error saving the quote. Please try again.");
+      setError("Error saving the quote. Please try again later.");
     }
   };
 
@@ -56,6 +58,11 @@ export default function AddQuotePage() {
       <main className="flex-1 ml-64 p-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold mb-6 text-primary">Add New Quote</h1>
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+              {error}
+            </div>
+          )}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <div className="space-y-4">
               <div>

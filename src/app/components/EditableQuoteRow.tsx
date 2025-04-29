@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Quote } from "../components/AddQuotePopup";
+import { Quote } from "../types/Quote";
 
 interface EditableQuoteRowProps {
   quote: Quote;
@@ -14,6 +14,7 @@ interface EditableQuoteRowProps {
     subjects: number;
     videoLink: number;
   };
+  showContributedBy?: boolean;
 }
 
 export default function EditableQuoteRow({
@@ -21,6 +22,7 @@ export default function EditableQuoteRow({
   onSave,
   onDelete,
   columnWidths,
+  showContributedBy = false,
 }: EditableQuoteRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedQuote, setEditedQuote] = useState<Quote>({ ...quote });
@@ -138,26 +140,28 @@ export default function EditableQuoteRow({
         )}
       </td>
 
-      {/* Contributed By Column */}
-      <td 
-        className="px-4 py-2 border-r border-gray-200"
-        style={{ width: `${columnWidths.contributedBy}px` }}
-      >
-        {isEditing ? (
-          <input
-            type="text"
-            value={editedQuote.contributedBy || ""}
-            onChange={(e) =>
-              setEditedQuote({ ...editedQuote, contributedBy: e.target.value })
-            }
-            className="input input-bordered w-full text-gray-800"
-          />
-        ) : (
-          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
-            {quote.contributedBy || "-"}
-          </div>
-        )}
-      </td>
+      {/* Contributed By Column - Only show if showContributedBy is true */}
+      {showContributedBy && (
+        <td 
+          className="px-4 py-2 border-r border-gray-200"
+          style={{ width: `${columnWidths.contributedBy}px` }}
+        >
+          {isEditing ? (
+            <input
+              type="text"
+              value={editedQuote.contributedBy || ""}
+              onChange={(e) =>
+                setEditedQuote({ ...editedQuote, contributedBy: e.target.value })
+              }
+              className="input input-bordered w-full text-gray-800"
+            />
+          ) : (
+            <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
+              {quote.contributedBy || "-"}
+            </div>
+          )}
+        </td>
+      )}
 
       {/* Subjects Column */}
       <td 

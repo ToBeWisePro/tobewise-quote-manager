@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Quote } from './AddQuotePopup';
+import { Quote } from '../types/Quote';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -27,6 +27,15 @@ interface DuplicateQuote {
 interface ImportedQuote extends Quote {
   id: string;
 }
+
+type CsvRow = {
+  author: string;
+  quoteText: string;
+  authorLink?: string;
+  contributedBy?: string;
+  subjects: string | string[];
+  videoLink?: string;
+};
 
 export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   const [previewData, setPreviewData] = useState<EditableQuote[]>([]);
@@ -59,7 +68,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
     link.click();
   };
 
-  const validateQuote = (quote: any, rowIndex: number): ValidationError | null => {
+  const validateQuote = (quote: CsvRow, rowIndex: number): ValidationError | null => {
     const errors: string[] = [];
     
     // Check required fields
@@ -136,13 +145,13 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
           const errors: ValidationError[] = [];
           const validQuotes: EditableQuote[] = [];
 
-          results.data.forEach((row: any, index: number) => {
+          results.data.forEach((row: CsvRow, _index: number) => {
             const isHeaderRow = Object.entries(row).every(([key, value]) => 
               typeof value === 'string' && value.trim().toLowerCase() === key.toLowerCase()
             );
             if (isHeaderRow) return;
 
-            const error = validateQuote(row, index);
+            const error = validateQuote(row, _index);
             if (error) {
               errors.push(error);
             } else {
@@ -340,7 +349,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                 <h4 className="font-semibold text-gray-800">Imported Quotes:</h4>
               </div>
               <div className="max-h-60 overflow-y-auto">
-                {importedQuotes.map((quote, index) => (
+                {importedQuotes.map((quote) => (
                   <div key={quote.id} className="p-4 border-b border-gray-100 last:border-0">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -375,14 +384,14 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                 </tr>
               </thead>
               <tbody>
-                {previewData.slice(0, 5).map((quote, index) => (
-                  <tr key={index} className="border-t hover:bg-gray-50">
+                {previewData.slice(0, 5).map((quote, i) => (
+                  <tr key={i} className="border-t hover:bg-gray-50">
                     <td className="px-4 py-2 border-r border-gray-200 text-gray-800">
                       {quote.isEditing ? (
                         <input
                           type="text"
                           value={quote.author}
-                          onChange={(e) => handleChange(index, 'author', e.target.value)}
+                          onChange={(e) => handleChange(i, 'author', e.target.value)}
                           className="input input-bordered w-full text-gray-800"
                         />
                       ) : (
@@ -393,7 +402,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                       {quote.isEditing ? (
                         <textarea
                           value={quote.quoteText}
-                          onChange={(e) => handleChange(index, 'quoteText', e.target.value)}
+                          onChange={(e) => handleChange(i, 'quoteText', e.target.value)}
                           className="textarea textarea-bordered w-full text-gray-800"
                         />
                       ) : (
@@ -405,7 +414,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                         <input
                           type="text"
                           value={quote.subjects.join(', ')}
-                          onChange={(e) => handleChange(index, 'subjects', e.target.value)}
+                          onChange={(e) => handleChange(i, 'subjects', e.target.value)}
                           className="input input-bordered w-full text-gray-800"
                           placeholder="Comma-separated subjects"
                         />
@@ -425,21 +434,21 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                     <td className="px-4 py-2 text-gray-800">
                       {quote.isEditing ? (
                         <button
-                          onClick={() => handleSave(index)}
+                          onClick={() => handleSave(i)}
                           className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 mr-2"
                         >
                           Save
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleEdit(index)}
+                          onClick={() => handleEdit(i)}
                           className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 mr-2"
                         >
                           Edit
                         </button>
                       )}
                       <button
-                        onClick={() => handleDelete(index)}
+                        onClick={() => handleDelete(i)}
                         className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
                       >
                         Delete
