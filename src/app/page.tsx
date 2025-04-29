@@ -172,7 +172,29 @@ export default function Home() {
       // Don't include id as it's the document ID
     };
     await updateDoc(quoteRef, quoteData);
-    await fetchQuotes();
+    
+    // Fetch fresh quotes from the database
+    const querySnapshot = await getDocs(collection(db, "quotes"));
+    const fetchedQuotes = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Quote[];
+    
+    // Sort quotes by author's first name
+    const sortedQuotes = fetchedQuotes.sort((a, b) => {
+      const getFirstName = (name: string) => name.split(' ')[0].toLowerCase();
+      return getFirstName(a.author).localeCompare(getFirstName(b.author));
+    });
+    
+    // Update the quotes state
+    setQuotes(sortedQuotes);
+    
+    // If there's an active search, maintain it
+    if (searchTerm.trim()) {
+      handleSearch(searchTerm, searchField);
+    } else {
+      setFilteredQuotes(sortedQuotes);
+    }
   };
 
   const handleDelete = async (id: string) => {
