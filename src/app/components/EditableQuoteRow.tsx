@@ -131,7 +131,7 @@ export default function EditableQuoteRow({
           <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.authorLink ? (
               <a href={quote.authorLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
-                Link
+                {quote.authorLink}
               </a>
             ) : (
               "-"
@@ -205,7 +205,7 @@ export default function EditableQuoteRow({
           <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.videoLink ? (
               <a href={quote.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
-                Link
+                {quote.videoLink}
               </a>
             ) : (
               "-"
