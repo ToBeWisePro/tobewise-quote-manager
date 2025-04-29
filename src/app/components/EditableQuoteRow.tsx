@@ -85,7 +85,7 @@ export default function EditableQuoteRow({
               className="textarea textarea-bordered w-full text-gray-800 min-h-[100px]"
             />
           ) : (
-            <div className="text-gray-800 break-words whitespace-normal max-h-[200px] overflow-y-auto">
+            <div className="text-gray-800 break-words whitespace-pre-wrap max-h-[200px] overflow-y-auto">
               {quote.quoteText}
             </div>
           )}
