@@ -63,78 +63,78 @@ export default function AddQuotePage() {
               {error}
             </div>
           )}
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <div className="space-y-4">
+          <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-200">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-black">Author</label>
-                <input
-                  type="text"
-                  value={newQuote.author}
-                  onChange={(e) => setNewQuote({ ...newQuote, author: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-black">Author Link</label>
-                <input
-                  type="text"
-                  value={newQuote.authorLink || ""}
-                  onChange={(e) => setNewQuote({ ...newQuote, authorLink: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-black">Quote Text</label>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Quote Text</label>
                 <textarea
                   value={newQuote.quoteText}
                   onChange={(e) => setNewQuote({ ...newQuote, quoteText: e.target.value })}
                   rows={4}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
+                  placeholder="e.g. 'If you don't like something, change it. If you can't change it, change your attitude.'"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-black">Subjects (comma-separated)</label>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Author</label>
+                <input
+                  type="text"
+                  value={newQuote.author}
+                  onChange={(e) => setNewQuote({ ...newQuote, author: e.target.value })}
+                  placeholder="e.g. Maya Angelou"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Author Link</label>
+                <input
+                  type="text"
+                  value={newQuote.authorLink || ""}
+                  onChange={(e) => setNewQuote({ ...newQuote, authorLink: e.target.value })}
+                  placeholder="e.g. https://en.wikipedia.org/wiki/Maya_Angelou"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Subjects (comma-separated)</label>
                 <input
                   type="text"
                   value={newQuote.subjects.join(", ")}
                   onChange={(e) => setNewQuote({ ...newQuote, subjects: e.target.value.split(",").map(s => s.trim()) })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
+                  placeholder="e.g. inspiration, attitude, change"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-black">Contributed By</label>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Contributed By</label>
                 <input
                   type="text"
                   value={newQuote.contributedBy || ""}
                   onChange={(e) => setNewQuote({ ...newQuote, contributedBy: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
+                  placeholder="e.g. Your Name"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-black">Video Link</label>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Video Link</label>
                 <input
                   type="text"
                   value={newQuote.videoLink || ""}
                   onChange={(e) => setNewQuote({ ...newQuote, videoLink: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black"
+                  placeholder="e.g. https://youtube.com/watch?v=..."
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
                 />
               </div>
-
-              <div className="flex justify-end space-x-4 mt-6">
+              <div className="flex justify-end space-x-4 mt-8">
                 <button
                   onClick={() => router.push("/")}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="px-5 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-secondary"
+                  className="px-5 py-2 bg-primary text-white rounded-lg hover:bg-secondary font-semibold shadow transition"
                 >
                   Save Quote
                 </button>

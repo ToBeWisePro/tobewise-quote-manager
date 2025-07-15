@@ -19,3 +19,62 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* High contrast input styling */
+@layer components {
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="url"],
+  input[type="search"],
+  input[type="number"],
+  input[type="tel"],
+  textarea,
+  select {
+    @apply bg-white text-black border-2 border-gray-400;
+    @apply placeholder:text-gray-600;
+    @apply focus:border-blue-600 focus:ring-2 focus:ring-blue-200 focus:outline-none;
+    @apply disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-300;
+  }
+
+  /* Ensure textarea has proper contrast */
+  textarea {
+    @apply bg-white text-black;
+  }
+
+  /* High contrast for select dropdowns */
+  select {
+    @apply bg-white text-black;
+  }
+
+  /* High contrast for file inputs */
+  input[type="file"] {
+    @apply text-black;
+  }
+
+  /* High contrast for input groups and form controls */
+  .input,
+  .textarea,
+  .select {
+    @apply bg-white text-black border-2 border-gray-400;
+    @apply focus:border-blue-600 focus:ring-2 focus:ring-blue-200 focus:outline-none;
+  }
+
+  /* Ensure proper contrast for input-bordered class */
+  .input-bordered {
+    @apply bg-white text-black border-2 border-gray-400;
+    @apply focus:border-blue-600 focus:ring-2 focus:ring-blue-200 focus:outline-none;
+  }
+
+  /* High contrast for textarea-bordered class */
+  .textarea-bordered {
+    @apply bg-white text-black border-2 border-gray-400;
+    @apply focus:border-blue-600 focus:ring-2 focus:ring-blue-200 focus:outline-none;
+  }
+
+  /* High contrast for select-bordered class */
+  .select-bordered {
+    @apply bg-white text-black border-2 border-gray-400;
+    @apply focus:border-blue-600 focus:ring-2 focus:ring-blue-200 focus:outline-none;
+  }
+}
