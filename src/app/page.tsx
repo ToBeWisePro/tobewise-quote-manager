@@ -216,6 +216,13 @@ export default function Home() {
     }));
   };
 
+  /* -------------------------- keep search on refresh ------------------------- */
+  useEffect(() => {
+    // Re-apply the current search/filter whenever the underlying data changes
+    handleSearch(searchTerm, searchField);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotes]);
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-neutral-light">

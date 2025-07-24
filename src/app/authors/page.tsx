@@ -96,7 +96,7 @@ export default function AuthorsPage() {
     profile: 120,
     description: 480,
   });
-  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
 
   /* ---------------------------- auth side‑effect ---------------------------- */
   useEffect(() => {
@@ -226,8 +226,9 @@ export default function AuthorsPage() {
 
   const handleGenerate = async (author: Author) => {
     try {
+      if (generatingIds.has(author.id)) return;
       console.log("[GEN] Starting generation for", author.name);
-      setGeneratingId(author.id);
+      setGeneratingIds(prev => new Set(prev).add(author.id));
 
       let profileUrl = "";
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -379,11 +380,11 @@ export default function AuthorsPage() {
       });
 
       await fetchAuthors();
-      setGeneratingId(null);
+      setGeneratingIds(prev=>{const s=new Set(prev);s.delete(author.id);return s;});
     } catch (e) {
       console.error("Generate failed", e);
     } finally {
-      setGeneratingId(null);
+      setGeneratingIds(prev=>{const s=new Set(prev);s.delete(author.id);return s;});
     }
   };
 
@@ -391,6 +392,13 @@ export default function AuthorsPage() {
     (column: keyof typeof columnWidths) => (width: number) => {
       setColumnWidths((prev) => ({ ...prev, [column]: width }));
     };
+
+  /* -------------------------- keep search on refresh ------------------------- */
+  useEffect(() => {
+    // Re-apply the current search/filter whenever the underlying data changes
+    handleSearch(searchTerm, searchField);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authors]);
 
   /* ------------------------------------------------------------------------ */
   /*                                 render                                   */
@@ -557,7 +565,7 @@ export default function AuthorsPage() {
                         author={author}
                         onSave={handleSave}
                         onGenerate={handleGenerate}
-                        isGenerating={generatingId === author.id}
+                        isGenerating={generatingIds.has(author.id)}
                         columnWidths={columnWidths}
                       />
                     ))}
