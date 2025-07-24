@@ -37,9 +37,19 @@ export default function Home() {
       const querySnapshot = await getDocs(collection(db, "quotes"));
       const idMap = new Map(); // Track used IDs and their quotes
       
-      const fetchedQuotes = querySnapshot.docs.map((doc) => {
-        const data = doc.data();
-        const id = doc.id;
+      const fetchedQuotes = await Promise.all(querySnapshot.docs.map(async (docSnap) => {
+        const data = docSnap.data();
+        const id = docSnap.id;
+        // If updatedAt is missing, set it to today (ISO) and persist
+        if (!data.updatedAt) {
+          const todayIso = new Date().toISOString();
+          try {
+            await updateDoc(doc(db, "quotes", id), { updatedAt: todayIso });
+            data.updatedAt = todayIso;
+          } catch (e) {
+            console.warn("Failed to set missing updatedAt", id, e);
+          }
+        }
         
         // Track quotes by ID for debugging
         if (idMap.has(id)) {
@@ -55,7 +65,7 @@ export default function Home() {
           id,
           ...data,
         };
-      }) as Quote[];
+      })) as Quote[];
       
       // Filter out any quotes that are missing required fields
       const validQuotes = fetchedQuotes.filter(quote => 

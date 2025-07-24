@@ -120,4 +120,15 @@ describe('Home CRUD operations', () => {
     // ISO string check (ends with Z)
     expect(updateArgs.updatedAt).toMatch(/Z$/);
   });
+
+  it('adds updatedAt when missing on fetch', async () => {
+    // mockQuoteData without updatedAt already
+    const { updateDoc } = require('firebase/firestore');
+    render(<Home />);
+    await waitFor(() => {
+      expect(updateDoc).toHaveBeenCalled();
+    });
+    const payload = updateDoc.mock.calls[0][1];
+    expect(payload.updatedAt).toBeDefined();
+  });
 }); 

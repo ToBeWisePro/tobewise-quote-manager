@@ -7,4 +7,5 @@ export interface Quote {
   authorLink?: string;
   contributedBy?: string;
   videoLink?: string;
+  updatedAt?: string;
 } 
