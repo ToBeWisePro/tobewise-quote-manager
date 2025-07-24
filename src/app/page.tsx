@@ -87,6 +87,21 @@ export default function Home() {
       
       setQuotes(sortedQuotes);
       setFilteredQuotes(sortedQuotes);
+      // Save/update the subjects list locally for autocomplete and Gemini prompts
+      try {
+        const allSubjects = Array.from(
+          new Set(
+            sortedQuotes.flatMap((q) =>
+              (q.subjects || []).map((s) => s.trim().toLowerCase())
+            )
+          )
+        );
+        if (typeof window !== "undefined") {
+          localStorage.setItem("subjects", JSON.stringify(allSubjects));
+        }
+      } catch (e) {
+        console.warn("Unable to persist subjects list", e);
+      }
     } catch (error) {
       console.error("Error fetching quotes:", error);
     } finally {

@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { generateSubjects } from "../lib/generateSubjects";
+import { generateAuthor } from "../lib/generateAuthor";
+import { generateAuthorLink } from "../lib/generateAuthorLink";
+import { generateVideoLink } from "../lib/generateVideoLink";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import { Quote } from "../types/Quote";
@@ -19,6 +23,75 @@ export default function AddQuotePage() {
     createdAt: new Date().toISOString(),
   });
 
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [authorLoading, setAuthorLoading] = useState(false);
+  const [authorLinkLoading, setAuthorLinkLoading] = useState(false);
+  const [videoLinkLoading, setVideoLinkLoading] = useState(false);
+  const [authorLinkInvalid, setAuthorLinkInvalid] = useState(false);
+
+  const handleQuoteBlur = useCallback(async () => {
+    if (!newQuote.quoteText.trim()) return;
+    try {
+      setSubjectsLoading(true);
+      setAuthorLoading(true);
+      
+      const stored = typeof window !== "undefined" ? localStorage.getItem("subjects") : null;
+      const allSubjects = stored ? (JSON.parse(stored) as string[]) : [];
+      
+      // Generate subjects and author in parallel
+      const [generatedSubjects, generatedAuthor] = await Promise.all([
+        generateSubjects(newQuote.quoteText, allSubjects),
+        generateAuthor(newQuote.quoteText)
+      ]);
+      
+      setNewQuote((prev) => ({ 
+        ...prev, 
+        subjects: generatedSubjects,
+        author: generatedAuthor
+      }));
+      
+      // Generate author link and video link after author is set
+      if (generatedAuthor && !generatedAuthor.toLowerCase().includes("unknown")) {
+        setAuthorLinkLoading(true);
+        setVideoLinkLoading(true);
+        
+        try {
+          const [generatedAuthorLink, generatedVideoLink] = await Promise.all([
+            generateAuthorLink(generatedAuthor),
+            generateVideoLink(generatedAuthor)
+          ]);
+          
+          // Handle invalid link indicator
+          if (generatedAuthorLink === "INVALID_LINK") {
+            setAuthorLinkInvalid(true);
+            setNewQuote((prev) => ({ 
+              ...prev, 
+              authorLink: "", // Don't fill the field
+              videoLink: generatedVideoLink
+            }));
+          } else {
+            setAuthorLinkInvalid(false);
+            setNewQuote((prev) => ({ 
+              ...prev, 
+              authorLink: generatedAuthorLink,
+              videoLink: generatedVideoLink
+            }));
+          }
+        } catch (err) {
+          console.error("Failed to generate author link or video link", err);
+        } finally {
+          setAuthorLinkLoading(false);
+          setVideoLinkLoading(false);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to generate subjects or author", err);
+    } finally {
+      setSubjectsLoading(false);
+      setAuthorLoading(false);
+    }
+  }, [newQuote.quoteText]);
+
   const handleSave = async () => {
     try {
       setError(null);
@@ -29,6 +102,18 @@ export default function AddQuotePage() {
       };
       
       await addDoc(collection(db, "quotes"), quoteData);
+
+      // Update localStorage subjects list immediately
+      try {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("subjects") : null;
+        const existing = stored ? (JSON.parse(stored) as string[]) : [];
+        const updated = Array.from(new Set([...existing, ...newQuote.subjects.map((s) => s.trim().toLowerCase())]));
+        if (typeof window !== "undefined") {
+          localStorage.setItem("subjects", JSON.stringify(updated));
+        }
+      } catch (e) {
+        console.warn("Unable to update local subjects list", e);
+      }
       router.push("/");
     } catch (error) {
       console.error("Error saving the quote:", error);
@@ -70,6 +155,7 @@ export default function AddQuotePage() {
                 <textarea
                   value={newQuote.quoteText}
                   onChange={(e) => setNewQuote({ ...newQuote, quoteText: e.target.value })}
+                  onBlur={handleQuoteBlur}
                   rows={4}
                   placeholder="e.g. 'If you don't like something, change it. If you can't change it, change your attitude.'"
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
@@ -77,33 +163,123 @@ export default function AddQuotePage() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">Author</label>
-                <input
-                  type="text"
-                  value={newQuote.author}
-                  onChange={(e) => setNewQuote({ ...newQuote, author: e.target.value })}
-                  placeholder="e.g. Maya Angelou"
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    disabled={authorLoading}
+                    value={newQuote.author}
+                    onChange={(e) => setNewQuote({ ...newQuote, author: e.target.value })}
+                    placeholder="e.g. Maya Angelou"
+                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400 disabled:cursor-not-allowed"
+                  />
+                  {authorLoading && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <svg
+                        className="animate-spin h-5 w-5 text-gray-500"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"
+                        ></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">Author Link</label>
-                <input
-                  type="text"
-                  value={newQuote.authorLink || ""}
-                  onChange={(e) => setNewQuote({ ...newQuote, authorLink: e.target.value })}
-                  placeholder="e.g. https://en.wikipedia.org/wiki/Maya_Angelou"
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    disabled={authorLinkLoading}
+                    value={newQuote.authorLink || ""}
+                    onChange={(e) => setNewQuote({ ...newQuote, authorLink: e.target.value })}
+                    placeholder="e.g. https://en.wikipedia.org/wiki/Maya_Angelou"
+                    className={`mt-1 block w-full rounded-lg shadow-sm focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400 disabled:cursor-not-allowed ${
+                      authorLinkInvalid 
+                        ? 'border-yellow-400 focus:border-yellow-400' 
+                        : 'border-gray-300 focus:border-primary'
+                    }`}
+                  />
+                  {authorLinkLoading && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <svg
+                        className="animate-spin h-5 w-5 text-gray-500"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"
+                        ></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">Subjects (comma-separated)</label>
-                <input
-                  type="text"
-                  value={newQuote.subjects.join(", ")}
-                  onChange={(e) => setNewQuote({ ...newQuote, subjects: e.target.value.split(",").map(s => s.trim()) })}
-                  placeholder="e.g. inspiration, attitude, change"
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    disabled={subjectsLoading}
+                    value={newQuote.subjects.join(", ")}
+                    onChange={(e) =>
+                      setNewQuote({
+                        ...newQuote,
+                        subjects: e.target.value.split(",").map((s) => s.trim()),
+                      })
+                    }
+                    placeholder="e.g. inspiration, attitude, change"
+                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400 disabled:cursor-not-allowed"
+                  />
+                  {subjectsLoading && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <svg
+                        className="animate-spin h-5 w-5 text-gray-500"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"
+                        ></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">Contributed By</label>
@@ -117,13 +293,40 @@ export default function AddQuotePage() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">Video Link</label>
-                <input
-                  type="text"
-                  value={newQuote.videoLink || ""}
-                  onChange={(e) => setNewQuote({ ...newQuote, videoLink: e.target.value })}
-                  placeholder="e.g. https://youtube.com/watch?v=..."
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    disabled={videoLinkLoading}
+                    value={newQuote.videoLink || ""}
+                    onChange={(e) => setNewQuote({ ...newQuote, videoLink: e.target.value })}
+                    placeholder="e.g. https://youtube.com/results?search_query=..."
+                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400 disabled:cursor-not-allowed"
+                  />
+                  {videoLinkLoading && (
+                    <div className="absolute inset-y-0 right-3 flex items-center">
+                      <svg
+                        className="animate-spin h-5 w-5 text-gray-500"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"
+                        ></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex justify-end space-x-4 mt-8">
                 <button
