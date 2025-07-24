@@ -100,4 +100,24 @@ describe('Home CRUD operations', () => {
     expect(screen.getByText('Test Author')).toBeInTheDocument();
     expect(screen.getByText('Test Quote')).toBeInTheDocument();
   });
+
+  it('adds updatedAt timestamp on save', async () => {
+    const { getByText, findByText } = render(<Home />);
+
+    // Wait for row to appear
+    await findByText('Test Author');
+
+    // Click Edit then Save
+    fireEvent.click(getByText('Edit'));
+    await act(async () => {
+      fireEvent.click(getByText('Save'));
+    });
+
+    const { updateDoc } = require('firebase/firestore');
+    expect(updateDoc).toHaveBeenCalled();
+    const updateArgs = updateDoc.mock.calls[0][1];
+    expect(updateArgs.updatedAt).toBeDefined();
+    // ISO string check (ends with Z)
+    expect(updateArgs.updatedAt).toMatch(/Z$/);
+  });
 }); 

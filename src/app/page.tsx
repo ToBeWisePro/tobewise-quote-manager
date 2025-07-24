@@ -184,6 +184,7 @@ export default function Home() {
       authorLink: updatedQuote.authorLink,
       contributedBy: updatedQuote.contributedBy,
       videoLink: updatedQuote.videoLink,
+      updatedAt: new Date().toISOString(), // record last update time (UTC)
       // Don't include id as it's the document ID
     };
     await updateDoc(quoteRef, quoteData);

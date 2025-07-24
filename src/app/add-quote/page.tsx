@@ -273,12 +273,35 @@ export default function AddQuotePage() {
     }
   }, [newQuote.quoteText, existingQuotes, autoGeneration, useGeminiAutofill]);
 
+  // When the author is edited manually (and we don't already have a link),
+  // populate generic Wikipedia & YouTube search URLs.
+  useEffect(() => {
+    if (authorLoading) return; // Wait until any AI generation finishes
+
+    const authorName = newQuote.author.trim();
+    if (!authorName) return;
+
+    // Only set generic links if we currently have none or an invalid link.
+    if (!newQuote.authorLink || authorLinkInvalid) {
+      const encoded = encodeURIComponent(authorName);
+      const genericWiki = `https://en.wikipedia.org/w/index.php?search=${encoded}`;
+      const genericYT = `https://www.youtube.com/results?search_query=${encoded}`;
+
+      setNewQuote((prev) => ({
+        ...prev,
+        authorLink: genericWiki,
+        videoLink: genericYT,
+      }));
+    }
+  }, [newQuote.author, authorLoading, authorLinkInvalid]);
+
   const handleSave = async () => {
     try {
       setError(null);
       // Generate a unique ID for the new quote
       const quoteData = {
         ...newQuote,
+        updatedAt: new Date().toISOString(),
         id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       };
       
