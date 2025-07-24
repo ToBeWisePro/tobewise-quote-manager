@@ -2,6 +2,12 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
+console.log("🔍 Debug: API Key check", {
+  hasApiKey: !!apiKey,
+  apiKeyLength: apiKey?.length,
+  apiKeyPrefix: apiKey?.substring(0, 10) + "..."
+});
+
 if (!apiKey) {
   throw new Error("NEXT_PUBLIC_GEMINI_API_KEY environment variable not set");
 }
@@ -11,6 +17,11 @@ const chat = new ChatGoogleGenerativeAI({
   apiKey,
   model: "gemini-2.5-flash",
   temperature: 0.3,
+});
+
+console.log("🔍 Debug: LangChain client initialized", {
+  model: "gemini-2.5-flash",
+  temperature: 0.3
 });
 
 /**
@@ -60,6 +71,8 @@ Selected:`;
 
   try {
     console.log("🔄 Calling Gemini via LangChain...");
+    console.log("🔍 Debug: Prompt length", prompt.length);
+    console.log("🔍 Debug: Existing subjects count", existingSubjects.length);
     
     // Call Gemini via LangChain
     const response = await chat.invoke(prompt);
