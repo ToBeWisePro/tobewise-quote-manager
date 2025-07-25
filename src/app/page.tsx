@@ -14,6 +14,8 @@ import { useAuth } from "./hooks/useAuth";
 import { Quote } from "./types/Quote";
 import ResizableTableHeader from "./components/ResizableTableHeader";
 import Image from "next/image";
+import dynamic from "next/dynamic"; // placeholder import to satisfy TS for dynamic utilise
+// Note: AI helper modules are loaded dynamically within runBulkGeneration to keep them out of Jest's initial parse phase
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
@@ -31,6 +33,8 @@ export default function Home() {
     subjects: 80, // 10% of 800px
     videoLink: 80, // 10% of 800px
   });
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   const fetchQuotes = async () => {
     try {
@@ -186,11 +190,14 @@ export default function Home() {
 
   const handleSave = async (updatedQuote: Quote) => {
     const quoteRef = doc(db, "quotes", updatedQuote.id);
-    // Convert Quote to plain object for Firestore
+    const cleanSubjects = updatedQuote.subjects
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
     const quoteData = {
       author: updatedQuote.author,
       quoteText: updatedQuote.quoteText,
-      subjects: updatedQuote.subjects,
+      subjects: cleanSubjects,
       authorLink: updatedQuote.authorLink,
       contributedBy: updatedQuote.contributedBy,
       videoLink: updatedQuote.videoLink,
@@ -222,6 +229,84 @@ export default function Home() {
     handleSearch(searchTerm, searchField);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotes]);
+
+  /* ---------------------- bulk AI generation over dataset --------------------- */
+  const runBulkGeneration = async () => {
+    if (bulkGenerating) return;
+    try {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("subjects") : null;
+      const allSubjects = stored ? (JSON.parse(stored) as string[]) : [];
+
+      const candidates = quotes.filter(
+        (q) =>
+          !q.subjects?.length ||
+          !q.author || q.author.toLowerCase().includes("unknown") ||
+          !q.authorLink || !q.videoLink,
+      );
+      const total = candidates.length;
+      if (!total) {
+        alert("All quotes already have metadata.");
+        return;
+      }
+
+      setBulkGenerating(true);
+      setBulkProgress({ done: 0, total });
+
+      // Dynamically import AI helper modules (avoids Jest ESM issues)
+      const [{ generateSubjects }, { generateAuthor }, { generateAuthorLink }, { generateVideoLink }, { ensureAuthorProfile }] = await Promise.all([
+        import("./lib/generateSubjects"),
+        import("./lib/generateAuthor"),
+        import("./lib/generateAuthorLink"),
+        import("./lib/generateVideoLink"),
+        import("./lib/ensureAuthorProfile"),
+      ]);
+
+      for (let i = 0; i < total; i++) {
+        const q = candidates[i];
+        try {
+          // 1) Generate subjects & author
+          const [subjects, authorName] = await Promise.all([
+            q.subjects?.length ? Promise.resolve(q.subjects) : generateSubjects(q.quoteText, allSubjects),
+            (!q.author || q.author.toLowerCase().includes("unknown")) ? generateAuthor(q.quoteText) : Promise.resolve(q.author),
+          ]);
+
+          let finalAuthor = authorName;
+          const updates: any = {};
+          if (!q.subjects?.length && subjects.length) updates.subjects = subjects;
+          if ((!q.author || q.author.toLowerCase().includes("unknown")) && authorName) updates.author = authorName;
+
+          // 2) Generate links based on resolved author name
+          if (finalAuthor && (!q.authorLink || !q.videoLink)) {
+            const [authorLink, videoLink] = await Promise.all([
+              !q.authorLink ? generateAuthorLink(finalAuthor) : Promise.resolve(q.authorLink!),
+              !q.videoLink ? generateVideoLink(finalAuthor) : Promise.resolve(q.videoLink!),
+            ]);
+            if (!q.authorLink && authorLink !== "INVALID_LINK") updates.authorLink = authorLink;
+            if (!q.videoLink) updates.videoLink = videoLink;
+          }
+
+          if (Object.keys(updates).length) {
+            updates.updatedAt = new Date().toISOString();
+            await updateDoc(doc(db, "quotes", q.id), updates);
+          }
+
+          // Ensure author profile exists
+          if (finalAuthor) {
+            await ensureAuthorProfile(finalAuthor);
+          }
+        } catch (e) {
+          console.warn("Bulk generation failed for", q.id, e);
+        } finally {
+          setBulkProgress({ done: i + 1, total });
+        }
+      }
+      await fetchQuotes();
+      alert("Bulk AI generation complete!");
+    } finally {
+      setBulkGenerating(false);
+      setBulkProgress(null);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -406,6 +491,16 @@ export default function Home() {
           </div>
         </div>
       </main>
+      {/* Floating bulk-generate button */}
+      {authenticated && !loading && (
+        <button
+          onClick={runBulkGeneration}
+          disabled={bulkGenerating}
+          className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg p-4 z-50 disabled:opacity-50"
+        >
+          {bulkGenerating && bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : "AI Generate Missing"}
+        </button>
+      )}
     </div>
   );
 }

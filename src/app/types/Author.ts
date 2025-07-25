@@ -3,6 +3,8 @@ export interface Author {
   name: string;
   profile_url?: string;
   description?: string;
+  amazonPage?: string;
+  amazonAffiliate?: string;
   createdAt?: string;
   updatedAt?: string;
 } 

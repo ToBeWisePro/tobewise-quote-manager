@@ -11,6 +11,8 @@ interface EditableAuthorRowProps {
     name: number;
     profile: number;
     description: number;
+    amazonPage: number;
+    amazonAffiliate: number;
   };
 }
 
@@ -144,6 +146,70 @@ export default function EditableAuthorRow({
             {author.description ? author.description : isGenerating ? (
               <div className="flex justify-center"><svg className="animate-spin h-4 w-4 text-gray-500" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"></path></svg></div>
             ) : "-"}
+          </div>
+        )}
+      </td>
+
+      {/* Amazon Page column */}
+      <td
+        className="px-4 py-2 border-l border-gray-200"
+        style={{ width: `${columnWidths.amazonPage}px` }}
+      >
+        {isEditing ? (
+          <input
+            type="url"
+            value={editedAuthor.amazonPage || ""}
+            onChange={(e) =>
+              setEditedAuthor({ ...editedAuthor, amazonPage: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
+            {author.amazonPage ? (
+              <a
+                href={author.amazonPage}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
+                Amazon Page
+              </a>
+            ) : (
+              "-"
+            )}
+          </div>
+        )}
+      </td>
+
+      {/* Amazon Affiliate Link column */}
+      <td
+        className="px-4 py-2 border-l border-gray-200"
+        style={{ width: `${columnWidths.amazonAffiliate}px` }}
+      >
+        {isEditing ? (
+          <input
+            type="url"
+            value={editedAuthor.amazonAffiliate || ""}
+            onChange={(e) =>
+              setEditedAuthor({ ...editedAuthor, amazonAffiliate: e.target.value })
+            }
+            className="input input-bordered w-full text-gray-800"
+          />
+        ) : (
+          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
+            {author.amazonAffiliate ? (
+              <a
+                href={author.amazonAffiliate}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
+                Affiliate Link
+              </a>
+            ) : (
+              "-"
+            )}
           </div>
         )}
       </td>

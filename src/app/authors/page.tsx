@@ -19,6 +19,7 @@ import {
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
+import { getDoc } from "firebase/firestore";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
 import EditableAuthorRow from "../components/EditableAuthorRow";
@@ -94,9 +95,13 @@ export default function AuthorsPage() {
   const [columnWidths, setColumnWidths] = useState({
     name: 200,
     profile: 120,
-    description: 480,
+    description: 360,
+    amazonPage: 160,
+    amazonAffiliate: 180,
   });
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   /* ---------------------------- auth side‑effect ---------------------------- */
   useEffect(() => {
@@ -138,6 +143,61 @@ export default function AuthorsPage() {
       setLoading(false);
     }
   }, [authenticated]);
+
+  /* ---------------------- bulk AI generation over dataset --------------------- */
+  const runBulkGeneration = async () => {
+    if (bulkGenerating) return;
+    try {
+      const candidates = authors.filter(
+        (a) => !a.description || !a.description.trim(),
+      );
+      const total = candidates.length;
+      if (!total) {
+        alert("All authors already have descriptions and photos.");
+        return;
+      }
+
+      console.log(`[BULK] Starting bulk generation for ${total} authors (description only)`);
+      setBulkGenerating(true);
+      setBulkProgress({ done: 0, total });
+
+      const queue = [...candidates];
+      let processed = 0;
+
+      const CONCURRENCY = 4;
+
+      const worker = async (workerId: number) => {
+        while (queue.length) {
+          const next = queue.pop();
+          if (!next) break;
+          try {
+            // Re-fetch the latest doc to ensure it still needs generation
+            const snap = await getDoc(doc(db!, "quote_authors", next.id));
+            const fresh = snap.exists() ? ({ id: next.id, ...snap.data() } as any as Author) : next;
+            if (fresh.description && fresh.description.trim()) {
+              console.log(`[THREAD ${workerId}] Skip (already has description): ${fresh.name}`);
+            } else {
+              console.log(`[THREAD ${workerId}] Generating for: ${fresh.name}`);
+              await handleGenerate(fresh);
+              console.log(`[THREAD ${workerId}] ✓ Completed ${fresh.name}`);
+            }
+          } catch (e) {
+            console.error(`[THREAD ${workerId}] ✗ Error processing ${next.name}:`, e);
+          } finally {
+            processed += 1;
+            setBulkProgress({ done: processed, total });
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: CONCURRENCY }, (_, idx) => worker(idx + 1)));
+      console.log(`[BULK] Bulk description generation finished.`);
+      alert("Bulk AI generation complete!");
+    } finally {
+      setBulkGenerating(false);
+      setBulkProgress(null);
+    }
+  };
 
   /* ----------------------------- event handlers ----------------------------- */
 
@@ -218,9 +278,15 @@ export default function AuthorsPage() {
       updatedAt: new Date().toISOString(),
     };
     if (profileUrl) data.profile_url = profileUrl; else data.profile_url = "";
-    // Only update description if non-empty to avoid accidentally wiping existing text
+    // Only update description if non-empty
     if (typeof updated.description === "string" && updated.description.trim()) {
       data.description = updated.description.trim();
+    }
+    if (typeof updated.amazonPage === "string" && updated.amazonPage.trim()) {
+      data.amazonPage = updated.amazonPage.trim();
+    }
+    if (typeof updated.amazonAffiliate === "string" && updated.amazonAffiliate.trim()) {
+      data.amazonAffiliate = updated.amazonAffiliate.trim();
     }
 
     await updateDoc(ref, data);
@@ -520,6 +586,15 @@ export default function AuthorsPage() {
                   </svg>
                 </div>
               </div>
+
+              {/* Bulk generate button */}
+              <button
+                onClick={runBulkGeneration}
+                disabled={bulkGenerating}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {bulkGenerating && bulkProgress ? `AI Generate (${bulkProgress.done}/${bulkProgress.total})` : "AI Generate Missing"}
+              </button>
             </div>
           </div>
 
@@ -532,6 +607,8 @@ export default function AuthorsPage() {
                     <col style={{ width: `${columnWidths.name}px` }} />
                     <col style={{ width: `${columnWidths.profile}px` }} />
                     <col style={{ width: `${columnWidths.description}px` }} />
+                    <col style={{ width: `${columnWidths.amazonPage}px` }} />
+                    <col style={{ width: `${columnWidths.amazonAffiliate}px` }} />
                   </colgroup>
 
                   <thead>
@@ -556,9 +633,25 @@ export default function AuthorsPage() {
                         initialWidth={columnWidths.description}
                         minWidth={200}
                         onResize={handleColumnResize("description")}
-                        isLastColumn
                       >
                         Description
+                      </ResizableTableHeader>
+
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.amazonPage}
+                        minWidth={120}
+                        onResize={handleColumnResize("amazonPage")}
+                      >
+                        Amazon Page
+                      </ResizableTableHeader>
+
+                      <ResizableTableHeader
+                        initialWidth={columnWidths.amazonAffiliate}
+                        minWidth={120}
+                        onResize={handleColumnResize("amazonAffiliate")}
+                        isLastColumn
+                      >
+                        Affiliate Link
                       </ResizableTableHeader>
                     </tr>
                   </thead>
