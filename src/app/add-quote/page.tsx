@@ -12,6 +12,7 @@ import { findSimilarQuote } from "../lib/fuzzyMatch";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import { Quote } from "../types/Quote";
+import { ensureAuthorProfile } from "../lib/ensureAuthorProfile";
 
 export default function AddQuotePage() {
   const router = useRouter();
@@ -306,6 +307,13 @@ export default function AddQuotePage() {
       };
       
       await addDoc(collection(getFirestoreDb(), "quotes"), quoteData);
+
+      // Ensure author profile exists (description + photo)
+      try {
+        await ensureAuthorProfile(newQuote.author);
+      } catch (e) {
+        console.warn("Unable to ensure author profile", e);
+      }
 
       // Update localStorage subjects list immediately
       try {

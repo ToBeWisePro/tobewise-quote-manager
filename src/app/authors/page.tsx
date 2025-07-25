@@ -177,14 +177,15 @@ export default function AuthorsPage() {
     let profileUrl = updated.profile_url ?? "";
     const prevUrl = updated.profile_url;
 
-    // If user pasted an external URL, cache to Storage
+    // If user pasted an external URL, try to cache it to Storage so we own the asset
     if (profileUrl && !profileUrl.includes("firebasestorage.googleapis.com")) {
       try {
-        const res = await fetch(profileUrl, { mode: "no-cors" });
+        const res = await fetch(profileUrl, { mode: "cors" }); // allow reading pixels when CORS enabled
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const raw = await res.blob();
         if (raw.type.startsWith("image")) {
           const blob = await squareImageBlob(raw);
-          const ext = "jpg";
+          const ext = (blob.type.split("/")[1] || "jpg").split(";")[0];
           const cleanName = updated.name
             .replace(/[^a-z0-9]/gi, "_")
             .toLowerCase();
@@ -197,6 +198,7 @@ export default function AuthorsPage() {
         }
       } catch (e) {
         console.warn("Failed to cache manual profile URL", e);
+        // Keep the external URL for now; the nightly job / ensureAuthorProfile can attempt again later.
       }
     }
 
@@ -216,7 +218,10 @@ export default function AuthorsPage() {
       updatedAt: new Date().toISOString(),
     };
     if (profileUrl) data.profile_url = profileUrl; else data.profile_url = "";
-    if (updated.description !== undefined) data.description = updated.description || "";
+    // Only update description if non-empty to avoid accidentally wiping existing text
+    if (typeof updated.description === "string" && updated.description.trim()) {
+      data.description = updated.description.trim();
+    }
 
     await updateDoc(ref, data);
     await fetchAuthors();
