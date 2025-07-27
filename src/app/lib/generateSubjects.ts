@@ -136,7 +136,15 @@ function parseSubjectsFromResponse(text: string): string[] {
       const jsonString = cleanText.slice(jsonStart, jsonEnd + 1);
       const parsed = JSON.parse(jsonString);
       if (Array.isArray(parsed)) {
-        return parsed.map((s) => String(s).trim().toLowerCase()).filter(Boolean);
+        // If the model returned one string with commas, split it further
+        let flat: string[] = [];
+        parsed.forEach((item) => {
+          if (typeof item === "string") {
+            const parts = item.split(/[,\n]/).map((p) => p.trim()).filter(Boolean);
+            flat.push(...parts);
+          }
+        });
+        return flat.map((s) => s.toLowerCase()).filter(Boolean);
       }
     }
   } catch (err) {
