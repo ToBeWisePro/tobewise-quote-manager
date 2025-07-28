@@ -335,6 +335,22 @@ export default function SideNav() {
           >
             Subject Explorer
           </Link>
+          <Link
+            href="/author-explorer"
+            className={`block px-4 py-2 rounded-md ${
+              isActive("/author-explorer") ? 'bg-primary text-white' : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            Author Explorer
+          </Link>
+          <Link
+            href="/super-subjects"
+            className={`block px-4 py-2 rounded-md ${
+              isActive("/super-subjects") ? 'bg-primary text-white' : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            SuperSubjects
+          </Link>
           {/* Divider */}
           <div className="border-t border-gray-200 my-2"></div>
 

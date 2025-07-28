@@ -144,7 +144,9 @@ function parseSubjectsFromResponse(text: string): string[] {
             flat.push(...parts);
           }
         });
-        return flat.map((s) => s.toLowerCase()).filter(Boolean);
+        return flat
+          .map((s) => s.toLowerCase())
+          .filter((token) => token && !/^\d+$/.test(token));
       }
     }
   } catch (err) {
@@ -155,6 +157,6 @@ function parseSubjectsFromResponse(text: string): string[] {
   return cleanText
     .split(/[,\n]/)
     .map((s) => s.trim().replace(/["\[\]]/g, "").toLowerCase()) // Remove quotes and brackets, convert to lowercase
-    .filter(Boolean)
+    .filter((token) => token && !/^\d+$/.test(token))
     .slice(0, 5);
 } 

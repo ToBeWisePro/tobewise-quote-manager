@@ -202,21 +202,21 @@ export default function AuthorsPage() {
   /* ----------------------------- event handlers ----------------------------- */
 
   const handleSearch = (term: string, field: typeof searchField) => {
-    if (!term.trim()) {
+    const trimmedTerm = term.toLowerCase().trim();
+    if (!trimmedTerm) {
       setFilteredAuthors(authors);
       return;
     }
-    const lower = term.toLowerCase();
     const filtered = authors.filter((author) => {
       if (field === "all") {
         return (
-          author.name.toLowerCase().includes(lower) ||
-          (author.description?.toLowerCase().includes(lower) ?? false)
+          author.name.toLowerCase().includes(trimmedTerm) ||
+          (author.description?.toLowerCase().includes(trimmedTerm) ?? false)
         );
       } else if (field === "name") {
-        return author.name.toLowerCase().includes(lower);
+        return author.name.toLowerCase().includes(trimmedTerm);
       } else if (field === "description") {
-        return author.description?.toLowerCase().includes(lower) ?? false;
+        return author.description?.toLowerCase().includes(trimmedTerm) ?? false;
       }
       return false;
     });
@@ -564,7 +564,7 @@ export default function AuthorsPage() {
                   placeholder="Search authors..."
                   value={searchTerm}
                   onChange={(e) => {
-                    const newTerm = e.target.value;
+                    const newTerm = e.target.value.toLowerCase().trim();
                     setSearchTerm(newTerm);
                     handleSearch(newTerm, searchField);
                   }}

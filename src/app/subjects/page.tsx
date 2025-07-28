@@ -60,7 +60,9 @@ export default function SubjectExplorerPage() {
             if (Array.isArray(data.subjects) && data.subjects.length === 1) {
               const first = data.subjects[0];
               if (typeof first === "string" && first.includes(",")) {
-                const newSubjects = first.split(/[,\n]/).map((s)=>s.trim().toLowerCase()).filter(Boolean);
+                const newSubjects = first.split(/[,\n]/)
+                  .map((s)=>s.trim().toLowerCase())
+                  .filter((token)=>token && !/^\d+$/.test(token));
                 if (newSubjects.length > 1) {
                   promises.push(updateDoc(doc(db!, "quotes", d.id), { subjects: newSubjects, updatedAt: new Date().toISOString() }));
                 }

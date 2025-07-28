@@ -18,18 +18,24 @@ export default function AddQuotePage() {
   const router = useRouter();
   const { authenticated, loading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [newQuote, setNewQuote] = useState<Omit<Quote, 'id'>>({
+  // Initial empty quote template
+  const createEmptyQuote = (): Omit<Quote, 'id'> => ({
     author: "",
     quoteText: "",
     subjects: [],
     createdAt: new Date().toISOString(),
   });
 
+  const [newQuote, setNewQuote] = useState<Omit<Quote, 'id'>>(createEmptyQuote());
+
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [authorLoading, setAuthorLoading] = useState(false);
   const [authorLinkLoading, setAuthorLinkLoading] = useState(false);
   const [videoLinkLoading, setVideoLinkLoading] = useState(false);
   const [authorLinkInvalid, setAuthorLinkInvalid] = useState(false);
+  // Track the last author name that links were generated for
+  const [lastLinkedAuthor, setLastLinkedAuthor] = useState<string>("");
+  const [authorDebounceTimer, setAuthorDebounceTimer] = useState<NodeJS.Timeout | null>(null);
   const [existingQuotes, setExistingQuotes] = useState<Array<{ id: string; quoteText: string; author: string }>>([]);
   const [similarQuote, setSimilarQuote] = useState<{ quote: { id: string; quoteText: string; author: string }; similarity: number } | null>(null);
   const [autoGeneration, setAutoGeneration] = useState(true);
@@ -274,10 +280,57 @@ export default function AddQuotePage() {
     }
   }, [newQuote.quoteText, existingQuotes, autoGeneration, useGeminiAutofill]);
 
+  // When the author field loses focus, (re)generate author/video links if needed
+  const handleAuthorBlur = useCallback(async () => {
+    const authorName = newQuote.author.trim();
+    if (!authorName) return;
+
+    // Skip if same author already linked
+    if (authorName.toLowerCase() === lastLinkedAuthor.toLowerCase()) return;
+
+    if (!useGeminiAutofill) return;
+
+    await regenerateLinks(authorName);
+  }, [newQuote.author, useGeminiAutofill, lastLinkedAuthor]);
+
+  // Core function to (re)generate author & video links
+  const regenerateLinks = useCallback(async (authorName: string) => {
+    if (!useGeminiAutofill) return;
+    // Prevent overlapping calls
+    if (authorLinkLoading || videoLinkLoading) return;
+    try {
+      setAuthorLinkLoading(true);
+      setVideoLinkLoading(true);
+
+      const [generatedAuthorLink, generatedVideoLink] = await Promise.all([
+        generateAuthorLink(authorName),
+        generateVideoLink(authorName),
+      ]);
+
+      if (generatedAuthorLink === "INVALID_LINK") {
+        setAuthorLinkInvalid(true);
+        setNewQuote((prev) => ({ ...prev, authorLink: "", videoLink: generatedVideoLink }));
+      } else {
+        setAuthorLinkInvalid(false);
+        setNewQuote((prev) => ({ ...prev, authorLink: generatedAuthorLink, videoLink: generatedVideoLink }));
+      }
+
+      setLastLinkedAuthor(authorName);
+    } catch (e) {
+      console.error("Failed to regenerate author/video links", e);
+    } finally {
+      setAuthorLinkLoading(false);
+      setVideoLinkLoading(false);
+    }
+  }, [useGeminiAutofill, authorLinkLoading, videoLinkLoading]);
+
   // When the author is edited manually (and we don't already have a link),
   // populate generic Wikipedia & YouTube search URLs.
   useEffect(() => {
     if (authorLoading) return; // Wait until any AI generation finishes
+
+    // If we've already generated specific links for this author, don't overwrite them with generic ones.
+    if (newQuote.author.trim().toLowerCase() === lastLinkedAuthor.toLowerCase()) return;
 
     const authorName = newQuote.author.trim();
     if (!authorName) return;
@@ -294,28 +347,45 @@ export default function AddQuotePage() {
         videoLink: genericYT,
       }));
     }
-  }, [newQuote.author, authorLoading, authorLinkInvalid]);
+  }, [newQuote.author, authorLoading, authorLinkInvalid, lastLinkedAuthor]);
+
+  // Debounced regeneration when author text changes (e.g., paste)
+  useEffect(() => {
+    const name = newQuote.author.trim();
+    if (!name || name.toLowerCase() === lastLinkedAuthor.toLowerCase()) return;
+    if (!useGeminiAutofill) return;
+
+    if (authorDebounceTimer) clearTimeout(authorDebounceTimer);
+    const t = setTimeout(() => {
+      regenerateLinks(name);
+    }, 700); // 0.7s debounce
+    setAuthorDebounceTimer(t);
+
+    return () => {
+      clearTimeout(t);
+    };
+  }, [newQuote.author]);
 
   const handleSave = async () => {
     try {
       setError(null);
-      // Generate a unique ID for the new quote
+
       const quoteData = {
         ...newQuote,
         updatedAt: new Date().toISOString(),
-        id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       };
-      
-      await addDoc(collection(getFirestoreDb(), "quotes"), quoteData);
 
-      // Ensure author profile exists (description + photo)
+      const docRef = await addDoc(collection(getFirestoreDb(), "quotes"), quoteData);
+
+      // Ensure author profile exists
       try {
         await ensureAuthorProfile(newQuote.author);
       } catch (e) {
         console.warn("Unable to ensure author profile", e);
       }
 
-      // Update localStorage subjects list immediately
+      // Persist new subjects to localStorage
       try {
         const stored = typeof window !== "undefined" ? localStorage.getItem("subjects") : null;
         const existing = stored ? (JSON.parse(stored) as string[]) : [];
@@ -326,7 +396,15 @@ export default function AddQuotePage() {
       } catch (e) {
         console.warn("Unable to update local subjects list", e);
       }
-      router.push("/");
+
+      // Add the new quote to local existingQuotes for future similarity checks
+      setExistingQuotes((prev) => [...prev, { id: docRef.id, quoteText: newQuote.quoteText, author: newQuote.author }]);
+
+      // Reset form for next entry
+      setNewQuote(createEmptyQuote());
+      setSimilarityLevel('none');
+      setSimilarQuote(null);
+      setAuthorLinkInvalid(false);
     } catch (error) {
       console.error("Error saving the quote:", error);
       setError("Error saving the quote. Please try again later.");
@@ -521,6 +599,7 @@ export default function AddQuotePage() {
                     disabled={authorLoading}
                     value={newQuote.author}
                     onChange={(e) => setNewQuote({ ...newQuote, author: e.target.value })}
+                    onBlur={handleAuthorBlur}
                     placeholder="e.g. Maya Angelou"
                     className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary text-black px-4 py-2 text-base bg-neutral-light placeholder-gray-400 disabled:cursor-not-allowed"
                   />
