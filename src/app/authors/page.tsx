@@ -28,6 +28,7 @@ import { useAuth } from "../hooks/useAuth";
 import { Author } from "../types/Author";
 import ResizableTableHeader from "../components/ResizableTableHeader";
 import Image from "next/image";
+import toast from "react-hot-toast";
 
 /* -------------------------------------------------------------------------- */
 /*                               helper functions                             */
@@ -120,8 +121,8 @@ export default function AuthorsPage() {
       const snapshot = await getDocs(collection(db!, "quote_authors"));
       const fetched = (await Promise.all(
         snapshot.docs.map(async (docSnap) => ({
-          id: docSnap.id,
           ...docSnap.data(),
+          id: docSnap.id,
         })),
       )) as Author[];
 
@@ -153,7 +154,7 @@ export default function AuthorsPage() {
       );
       const total = candidates.length;
       if (!total) {
-        alert("All authors already have descriptions and photos.");
+        toast("All authors already have descriptions and photos.");
         return;
       }
 
@@ -192,7 +193,7 @@ export default function AuthorsPage() {
 
       await Promise.all(Array.from({ length: CONCURRENCY }, (_, idx) => worker(idx + 1)));
       console.log(`[BULK] Bulk description generation finished.`);
-      alert("Bulk AI generation complete!");
+      toast.success("Bulk AI generation complete!");
     } finally {
       setBulkGenerating(false);
       setBulkProgress(null);
@@ -228,7 +229,7 @@ export default function AuthorsPage() {
       setLoading(true);
       fetchAuthors();
     } else {
-      alert("Incorrect password. Please try again.");
+      toast.error("Incorrect password. Please try again.");
     }
   };
 
@@ -289,8 +290,10 @@ export default function AuthorsPage() {
       data.amazonAffiliate = updated.amazonAffiliate.trim();
     }
 
+        const loadingId = toast.loading("Saving author…");
     await updateDoc(ref, data);
     await fetchAuthors();
+    toast.success("Author updated", { id: loadingId });
   };
 
   /* ----------------------- AI: generate missing fields ---------------------- */
@@ -587,14 +590,7 @@ export default function AuthorsPage() {
                 </div>
               </div>
 
-              {/* Bulk generate button */}
-              <button
-                onClick={runBulkGeneration}
-                disabled={bulkGenerating}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {bulkGenerating && bulkProgress ? `AI Generate (${bulkProgress.done}/${bulkProgress.total})` : "AI Generate Missing"}
-              </button>
+
             </div>
           </div>
 

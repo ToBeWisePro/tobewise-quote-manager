@@ -10,6 +10,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 // IMPORTANT: requires NEXT_PUBLIC_GEMINI_API_KEY to be set
 import { useAuth } from '../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 export default function SideNav() {
   const pathname = usePathname();
@@ -26,7 +27,7 @@ export default function SideNav() {
 
     const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (!apiKey) {
-      alert('Gemini API key missing (NEXT_PUBLIC_GEMINI_API_KEY)');
+      toast.error('Gemini API key missing (NEXT_PUBLIC_GEMINI_API_KEY)');
       return;
     }
 
@@ -281,7 +282,7 @@ export default function SideNav() {
       }
 
       console.log(`[PHOTO] ===== Completed. Updated ${updatedCount} author${updatedCount !== 1 ? 's' : ''}. =====`);
-      alert(`Author profile update complete. Updated ${updatedCount} author${updatedCount !== 1 ? 's' : ''}.`);
+      toast.success(`Author profile update complete. Updated ${updatedCount} author${updatedCount !== 1 ? 's' : ''}.`);
     } catch (err) {
       console.error('Update author profiles script failed:', err);
     } finally {

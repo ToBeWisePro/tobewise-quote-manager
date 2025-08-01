@@ -13,6 +13,8 @@ import SideNav from "./components/SideNav";
 import { useAuth } from "./hooks/useAuth";
 import { Quote } from "./types/Quote";
 import ResizableTableHeader from "./components/ResizableTableHeader";
+import { updateDocument } from "./lib/firebaseCrud";
+import toast from "react-hot-toast";
 import Image from "next/image";
 import dynamic from "next/dynamic"; // placeholder import to satisfy TS for dynamic utilise
 // Note: AI helper modules are loaded dynamically within runBulkGeneration to keep them out of Jest's initial parse phase
@@ -66,8 +68,8 @@ export default function Home() {
         }
         
         return {
-          id,
           ...data,
+          id,
         };
       })) as Quote[];
       
@@ -184,12 +186,11 @@ export default function Home() {
       setLoading(true);
       fetchQuotes();
     } else {
-      alert("Incorrect password. Please try again.");
+      toast.error("Incorrect password. Please try again.");
     }
   };
 
   const handleSave = async (updatedQuote: Quote) => {
-    const quoteRef = doc(db, "quotes", updatedQuote.id);
     const cleanSubjects = updatedQuote.subjects
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
@@ -201,11 +202,20 @@ export default function Home() {
       authorLink: updatedQuote.authorLink,
       contributedBy: updatedQuote.contributedBy,
       videoLink: updatedQuote.videoLink,
-      updatedAt: new Date().toISOString(), // record last update time (UTC)
-      // Don't include id as it's the document ID
-    };
-    await updateDoc(quoteRef, quoteData);
-    await fetchQuotes();
+    } as Partial<Quote>;
+
+    const toastId = toast.loading("Saving quote…");
+    try {
+      await updateDocument<Quote>("quotes", updatedQuote.id, quoteData);
+      await fetchQuotes();
+      toast.success("Quote updated successfully", { id: toastId });
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Failed to save quote", { id: toastId });
+    } finally {
+      // Dismiss loading toast
+      toast.dismiss(toastId as any);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -245,7 +255,7 @@ export default function Home() {
       );
       const total = candidates.length;
       if (!total) {
-        alert("All quotes already have metadata.");
+        toast("All quotes already have metadata.");
         return;
       }
 
@@ -301,7 +311,7 @@ export default function Home() {
         }
       }
       await fetchQuotes();
-      alert("Bulk AI generation complete!");
+      toast.success("Bulk AI generation complete!");
     } finally {
       setBulkGenerating(false);
       setBulkProgress(null);
@@ -491,16 +501,7 @@ export default function Home() {
           </div>
         </div>
       </main>
-      {/* Floating bulk-generate button */}
-      {authenticated && !loading && (
-        <button
-          onClick={runBulkGeneration}
-          disabled={bulkGenerating}
-          className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg p-4 z-50 disabled:opacity-50"
-        >
-          {bulkGenerating && bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : "AI Generate Missing"}
-        </button>
-      )}
+
     </div>
   );
 }

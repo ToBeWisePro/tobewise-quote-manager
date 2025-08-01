@@ -21,8 +21,8 @@ export default function BulkUploadPage() {
       setError(null);
       const querySnapshot = await getDocs(collection(db, "quotes"));
       const fetchedQuotes = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
         ...doc.data(),
+        id: doc.id,
       })) as Quote[];
       setQuotes(fetchedQuotes);
     } catch (error) {

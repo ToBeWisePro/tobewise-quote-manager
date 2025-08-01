@@ -6,6 +6,7 @@ import { db } from "../lib/firebase";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import Image from "next/image";
+import toast from "react-hot-toast";
 // No need to import Quote now
 
 interface SubjectCount {
@@ -88,7 +89,7 @@ export default function SubjectExplorerPage() {
       setLoading(true);
       fetchSubjects();
     } else {
-      alert("Incorrect password. Please try again.");
+      toast.error("Incorrect password. Please try again.");
     }
   };
 

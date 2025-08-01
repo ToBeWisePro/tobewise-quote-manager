@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 // Mock Firebase
-jest.mock('./lib/firebase', () => ({ db: {} }));
+jest.mock('./lib/firebase', () => ({ db: {}, getFirestoreDb: jest.fn(() => ({})) }));
 jest.mock('./hooks/useAuth', () => ({ 
   useAuth: () => ({ 
     authenticated: true, 

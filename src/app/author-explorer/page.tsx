@@ -6,6 +6,7 @@ import { db } from "../lib/firebase";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import Image from "next/image";
+import toast from "react-hot-toast";
 
 interface AuthorCount {
   author: string;
@@ -51,7 +52,7 @@ export default function AuthorExplorerPage() {
       setLoading(true);
       fetchAuthors();
     } else {
-      alert("Incorrect password. Please try again.");
+      toast.error("Incorrect password. Please try again.");
     }
   };
 

@@ -8,6 +8,7 @@ import { db } from "../lib/firebase";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import Image from "next/image";
+import toast from "react-hot-toast";
 
 interface SuperSubject {
   id?: string; // Add unique ID field
@@ -354,7 +355,7 @@ export default function SuperSubjectsPage() {
       setLoading(true);
       fetchSuperSubjects();
     } else {
-      alert("Incorrect password. Please try again.");
+      toast.error("Incorrect password. Please try again.");
     }
   };
 
@@ -383,7 +384,7 @@ export default function SuperSubjectsPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { 
-      alert("Name required"); 
+      toast.error("Name required"); 
       return; 
     }
     
@@ -415,7 +416,7 @@ export default function SuperSubjectsPage() {
           console.log("Image uploaded successfully:", imgUrl);
         } catch (e) { 
           console.error("Image upload failed:", e); 
-          alert("Image upload failed. Please try again.");
+          toast.error("Image upload failed. Please try again.");
           return;
         }
       }
@@ -439,11 +440,11 @@ export default function SuperSubjectsPage() {
       
       // Show success message
       const action = editing ? "updated" : "created";
-      alert(`Super-subject "${form.name}" ${action} successfully!`);
+      toast.success(`Super-subject "${form.name}" ${action} successfully!`);
       
     } catch (e) { 
       console.error("Save failed:", e); 
-      alert("Save failed. Please try again."); 
+      toast.error("Save failed. Please try again."); 
     } finally {
       setSaving(false);
     }
@@ -461,13 +462,13 @@ export default function SuperSubjectsPage() {
       await fetchSuperSubjects();
       const stillThere = superSubjects.some(s=> (s.id||s.name)===id);
       if (stillThere) {
-        alert('Delete failed (document still exists).');
+        toast.error('Delete failed (document still exists).');
       } else {
-        alert(`"${ss.name}" deleted.`);
+        toast.success(`"${ss.name}" deleted.`);
       }
     } catch (e:any) {
       console.error(e);
-      alert(`Delete failed: ${e.message||e}`);
+      toast.error(`Delete failed: ${e.message||e}`);
     } finally {
       setDeletingId(null);
     }
