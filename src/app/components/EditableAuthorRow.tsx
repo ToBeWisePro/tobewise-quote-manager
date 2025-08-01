@@ -82,7 +82,7 @@ export default function EditableAuthorRow({
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline break-all"
               >
-                Photo
+                {author.profile_url}
               </a>
             ) : isGenerating ? (
               <div className="flex justify-center">
@@ -163,7 +163,7 @@ export default function EditableAuthorRow({
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline break-all"
               >
-                Amazon Page
+                {author.amazonPage}
               </a>
             ) : (
               "-"

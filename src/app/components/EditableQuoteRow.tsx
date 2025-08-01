@@ -112,7 +112,7 @@ export default function EditableQuoteRow({
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline break-all"
               >
-                Link
+                {quote.authorLink}
               </a>
             ) : (
               "-"
@@ -152,7 +152,7 @@ export default function EditableQuoteRow({
                 rel="noopener noreferrer"
                 className="text-blue-600 hover:underline break-all"
               >
-                Link
+                {quote.videoLink}
               </a>
             ) : (
               "-"
