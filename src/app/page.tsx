@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { db } from "./lib/firebase";
 import {
   collection,
@@ -24,6 +24,7 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchField, setSearchField] = useState("all");
@@ -225,6 +226,38 @@ export default function Home() {
     await deleteDoc(doc(db, "quotes", id));
     await fetchQuotes();
   };
+
+  const handleSort = (key: keyof typeof columnWidths) => {
+    setSortConfig(prev => {
+      if (prev && prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, dir: 'asc' };
+    });
+  };
+
+  const sortedQuotes = useMemo(() => {
+    if (!sortConfig) return filteredQuotes;
+    const sorted = [...filteredQuotes].sort((a, b) => {
+      let vA: any;
+      let vB: any;
+      if (sortConfig.key === 'quote') {
+        vA = a.quoteText;
+        vB = b.quoteText;
+      } else {
+        vA = (a as any)[sortConfig.key];
+        vB = (b as any)[sortConfig.key];
+      }
+      const compA = Array.isArray(vA) ? vA.join(', ') : vA ?? '';
+      const compB = Array.isArray(vB) ? vB.join(', ') : vB ?? '';
+      if (typeof compA === 'number' && typeof compB === 'number') {
+        return compA - compB;
+      }
+      return String(compA).localeCompare(String(compB), undefined, { sensitivity: 'base' });
+    });
+    if (sortConfig.dir === 'desc') sorted.reverse();
+    return sorted;
+  }, [filteredQuotes, sortConfig]);
 
   const handleColumnResize = (column: keyof typeof columnWidths) => (width: number) => {
     setColumnWidths(prev => ({
@@ -440,6 +473,8 @@ export default function Home() {
                         initialWidth={columnWidths.quote}
                         minWidth={200}
                         onResize={handleColumnResize('quote')}
+                        onSort={() => handleSort('quote')}
+                        sortDir={sortConfig?.key === 'quote' ? sortConfig.dir : undefined}
                       >
                         Quote
                       </ResizableTableHeader>
@@ -447,6 +482,8 @@ export default function Home() {
                         initialWidth={columnWidths.author}
                         minWidth={100}
                         onResize={handleColumnResize('author')}
+                        onSort={() => handleSort('author')}
+                        sortDir={sortConfig?.key === 'author' ? sortConfig.dir : undefined}
                       >
                         Author
                       </ResizableTableHeader>
@@ -454,6 +491,8 @@ export default function Home() {
                         initialWidth={columnWidths.authorLink}
                         minWidth={100}
                         onResize={handleColumnResize('authorLink')}
+                        onSort={() => handleSort('authorLink')}
+                        sortDir={sortConfig?.key === 'authorLink' ? sortConfig.dir : undefined}
                       >
                         Author Link
                       </ResizableTableHeader>
@@ -462,6 +501,8 @@ export default function Home() {
                           initialWidth={columnWidths.contributedBy}
                           minWidth={100}
                           onResize={handleColumnResize('contributedBy')}
+                          onSort={() => handleSort('contributedBy')}
+                          sortDir={sortConfig?.key === 'contributedBy' ? sortConfig.dir : undefined}
                         >
                           Contributed By
                         </ResizableTableHeader>
@@ -470,6 +511,8 @@ export default function Home() {
                         initialWidth={columnWidths.subjects}
                         minWidth={80}
                         onResize={handleColumnResize('subjects')}
+                        onSort={() => handleSort('subjects')}
+                        sortDir={sortConfig?.key === 'subjects' ? sortConfig.dir : undefined}
                       >
                         Subjects
                       </ResizableTableHeader>
@@ -477,6 +520,8 @@ export default function Home() {
                         initialWidth={columnWidths.videoLink}
                         minWidth={80}
                         onResize={handleColumnResize('videoLink')}
+                        onSort={() => handleSort('videoLink')}
+                        sortDir={sortConfig?.key === 'videoLink' ? sortConfig.dir : undefined}
                         isLastColumn
                       >
                         Video Link
@@ -484,7 +529,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredQuotes.map((quote, index) => (
+                    {sortedQuotes.map((quote, index) => (
                       <EditableQuoteRow
                         key={`${quote.id}-${index}`}
                         quote={quote}

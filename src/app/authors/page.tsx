@@ -26,7 +26,8 @@ import EditableAuthorRow from "../components/EditableAuthorRow";
 import SideNav from "../components/SideNav";
 import { useAuth } from "../hooks/useAuth";
 import { Author } from "../types/Author";
-import ResizableTableHeader from "../components/ResizableTableHeader";
+
+import DataTable, { ColumnDef } from "../components/DataTable";
 import Image from "next/image";
 import toast from "react-hot-toast";
 
@@ -93,13 +94,32 @@ export default function AuthorsPage() {
   const [searchField, setSearchField] = useState<"all" | "name" | "description">(
     "all",
   );
-  const [columnWidths, setColumnWidths] = useState({
-    name: 200,
-    profile: 120,
-    description: 360,
-    amazonPage: 160,
-    amazonAffiliate: 180,
-  });
+  // Column definitions for DataTable (molecule level)
+  const columns: ColumnDef[] = [
+    { key: "name", label: "Name", width: 200, minWidth: 150 },
+    {
+      key: "profile",
+      label: "Profile Photo",
+      width: 120,
+      minWidth: 100,
+      sortAccessor: (row: Author) => (row.profile_url ? 1 : 0),
+    },
+    {
+      key: "description",
+      label: "Description",
+      width: 360,
+      minWidth: 200,
+      sortAccessor: (row: Author) => row.description ?? "",
+    },
+    {
+      key: "amazonPage",
+      label: "Amazon Page",
+      width: 160,
+      minWidth: 120,
+      sortAccessor: (row: Author) => row.amazonPage ?? "",
+    },
+  ];
+
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
@@ -286,9 +306,7 @@ export default function AuthorsPage() {
     if (typeof updated.amazonPage === "string" && updated.amazonPage.trim()) {
       data.amazonPage = updated.amazonPage.trim();
     }
-    if (typeof updated.amazonAffiliate === "string" && updated.amazonAffiliate.trim()) {
-      data.amazonAffiliate = updated.amazonAffiliate.trim();
-    }
+    
 
         const loadingId = toast.loading("Saving author…");
     await updateDoc(ref, data);
@@ -462,10 +480,7 @@ export default function AuthorsPage() {
     }
   };
 
-  const handleColumnResize =
-    (column: keyof typeof columnWidths) => (width: number) => {
-      setColumnWidths((prev) => ({ ...prev, [column]: width }));
-    };
+
 
   /* -------------------------- keep search on refresh ------------------------- */
   useEffect(() => {
@@ -595,79 +610,22 @@ export default function AuthorsPage() {
           </div>
 
           {/* ------------------------------- table ------------------------------ */}
-          <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
-            <div className="h-full overflow-y-auto overflow-x-hidden">
-              <div className="w-full overflow-x-auto">
-                <table className="table-fixed border-collapse w-full">
-                  <colgroup>
-                    <col style={{ width: `${columnWidths.name}px` }} />
-                    <col style={{ width: `${columnWidths.profile}px` }} />
-                    <col style={{ width: `${columnWidths.description}px` }} />
-                    <col style={{ width: `${columnWidths.amazonPage}px` }} />
-                    <col style={{ width: `${columnWidths.amazonAffiliate}px` }} />
-                  </colgroup>
+          <DataTable<Author>
+            columns={columns}
+            data={filteredAuthors}
+            rowKey={(a) => a.id}
+            heightClass="flex-1"
+            rowRenderer={(author, widths, _index) => (
+              <EditableAuthorRow
+                author={author as Author}
+                onSave={handleSave}
+                onGenerate={handleGenerate}
+                isGenerating={generatingIds.has(author.id)}
+                columnWidths={widths as any}
+              />
+            )}
+          />
 
-                  <thead>
-                    <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.name}
-                        minWidth={150}
-                        onResize={handleColumnResize("name")}
-                      >
-                        Name
-                      </ResizableTableHeader>
-
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.profile}
-                        minWidth={100}
-                        onResize={handleColumnResize("profile")}
-                      >
-                        Profile Photo
-                      </ResizableTableHeader>
-
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.description}
-                        minWidth={200}
-                        onResize={handleColumnResize("description")}
-                      >
-                        Description
-                      </ResizableTableHeader>
-
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.amazonPage}
-                        minWidth={120}
-                        onResize={handleColumnResize("amazonPage")}
-                      >
-                        Amazon Page
-                      </ResizableTableHeader>
-
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.amazonAffiliate}
-                        minWidth={120}
-                        onResize={handleColumnResize("amazonAffiliate")}
-                        isLastColumn
-                      >
-                        Affiliate Link
-                      </ResizableTableHeader>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {filteredAuthors.map((author) => (
-                      <EditableAuthorRow
-                        key={author.id}
-                        author={author}
-                        onSave={handleSave}
-                        onGenerate={handleGenerate}
-                        isGenerating={generatingIds.has(author.id)}
-                        columnWidths={columnWidths}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
         </div>
       </main>
     </div>

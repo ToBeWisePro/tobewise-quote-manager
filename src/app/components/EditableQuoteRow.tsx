@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
 import { Quote } from "../types/Quote";
+import EditModal from "./EditModal";
+import DynamicForm, { FieldConfig } from "./DynamicForm";
 
 interface EditableQuoteRowProps {
   quote: Quote;
-  onSave: (quote: Quote) => void;
+  onSave: (quote: Quote) => Promise<void> | void;
   onDelete: (id: string) => void;
   columnWidths: {
     quote: number;
@@ -24,195 +26,153 @@ export default function EditableQuoteRow({
   columnWidths,
   showContributedBy = false,
 }: EditableQuoteRowProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editedQuote, setEditedQuote] = useState<Quote>({ ...quote });
 
-  const handleSave = () => {
-    onSave(editedQuote);
-    setIsEditing(false);
+  const fieldConfig: FieldConfig[] = [
+    {
+      name: "quoteText",
+      label: "Quote Text",
+      type: "textarea",
+    },
+    {
+      name: "author",
+      label: "Author",
+      type: "text",
+    },
+    {
+      name: "authorLink",
+      label: "Author Link",
+      type: "url",
+    },
+  ];
+
+  if (showContributedBy) {
+    fieldConfig.push({ name: "contributedBy", label: "Contributed By", type: "text" });
+  }
+
+  fieldConfig.push(
+    { name: "subjects", label: "Subjects (comma separated)", type: "array" },
+    { name: "videoLink", label: "Video Link", type: "url" },
+  );
+
+  const handleSave = async () => {
+    await onSave(editedQuote);
   };
 
   return (
-    <tr className="border-t hover:bg-gray-50">
-      {/* Combined Actions and Quote Text Column */}
-      <td 
-        className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300"
-        style={{ width: `${columnWidths.quote}px` }}
-      >
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={handleSave}
-                  className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => {
-                    setEditedQuote({ ...quote });
-                    setIsEditing(false);
-                  }}
-                  className="bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => onDelete(quote.id)}
-                  className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
-                >
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
-          {isEditing ? (
-            <textarea
-              value={editedQuote.quoteText}
-              onChange={(e) =>
-                setEditedQuote({ ...editedQuote, quoteText: e.target.value })
-              }
-              className="textarea textarea-bordered w-full text-gray-800 min-h-[100px]"
-            />
-          ) : (
+    <>
+      <tr className="border-t hover:bg-gray-50">
+        {/* Actions & Quote text column (sticky) */}
+        <td
+          className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300"
+          style={{ width: `${columnWidths.quote}px` }}
+        >
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setModalOpen(true)}
+                className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => onDelete(quote.id)}
+                className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
             <div className="text-gray-800 break-words whitespace-normal max-h-[200px] overflow-y-auto">
               {quote.quoteText}
             </div>
-          )}
-        </div>
-      </td>
+          </div>
+        </td>
 
-      {/* Author Column */}
-      <td 
-        className="px-4 py-2 border-r border-gray-200"
-        style={{ width: `${columnWidths.author}px` }}
-      >
-        {isEditing ? (
-          <input
-            type="text"
-            value={editedQuote.author}
-            onChange={(e) =>
-              setEditedQuote({ ...editedQuote, author: e.target.value })
-            }
-            className="input input-bordered w-full text-gray-800"
-          />
-        ) : (
+        {/* Author Column */}
+        <td
+          className="px-4 py-2 border-r border-gray-200"
+          style={{ width: `${columnWidths.author}px` }}
+        >
           <div className="text-gray-800 font-medium break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.author}
           </div>
-        )}
-      </td>
+        </td>
 
-      {/* Author Link Column */}
-      <td 
-        className="px-4 py-2 border-r border-gray-200"
-        style={{ width: `${columnWidths.authorLink}px` }}
-      >
-        {isEditing ? (
-          <input
-            type="url"
-            value={editedQuote.authorLink || ""}
-            onChange={(e) =>
-              setEditedQuote({ ...editedQuote, authorLink: e.target.value })
-            }
-            className="input input-bordered w-full text-gray-800"
-          />
-        ) : (
+        {/* Author Link Column */}
+        <td
+          className="px-4 py-2 border-r border-gray-200"
+          style={{ width: `${columnWidths.authorLink}px` }}
+        >
           <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.authorLink ? (
-              <a href={quote.authorLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+              <a
+                href={quote.authorLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
                 Link
               </a>
             ) : (
               "-"
             )}
           </div>
-        )}
-      </td>
+        </td>
 
-      {/* Contributed By Column - Only show if showContributedBy is true */}
-      {showContributedBy && (
-        <td 
-          className="px-4 py-2 border-r border-gray-200"
-          style={{ width: `${columnWidths.contributedBy}px` }}
-        >
-          {isEditing ? (
-            <input
-              type="text"
-              value={editedQuote.contributedBy || ""}
-              onChange={(e) =>
-                setEditedQuote({ ...editedQuote, contributedBy: e.target.value })
-              }
-              className="input input-bordered w-full text-gray-800"
-            />
-          ) : (
+        {/* Contributed By Column */}
+        {showContributedBy && (
+          <td
+            className="px-4 py-2 border-r border-gray-200"
+            style={{ width: `${columnWidths.contributedBy}px` }}
+          >
             <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
               {quote.contributedBy || "-"}
             </div>
-          )}
-        </td>
-      )}
+          </td>
+        )}
 
-      {/* Subjects Column */}
-      <td 
-        className="px-4 py-2 border-r border-gray-200"
-        style={{ width: `${columnWidths.subjects}px` }}
-      >
-        {isEditing ? (
-          <input
-            type="text"
-            value={editedQuote.subjects.join(", ")}
-            onChange={(e) =>
-              setEditedQuote({
-                ...editedQuote,
-                subjects: e.target.value.split(",").map((s) => s.trim()),
-              })
-            }
-            className="input input-bordered w-full text-gray-800"
-          />
-        ) : (
+        {/* Subjects Column */}
+        <td
+          className="px-4 py-2 border-r border-gray-200"
+          style={{ width: `${columnWidths.subjects}px` }}
+        >
           <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.subjects.join(", ")}
           </div>
-        )}
-      </td>
+        </td>
 
-      {/* Video Link Column */}
-      <td 
-        className="px-4 py-2"
-        style={{ width: `${columnWidths.videoLink}px` }}
-      >
-        {isEditing ? (
-          <input
-            type="url"
-            value={editedQuote.videoLink || ""}
-            onChange={(e) =>
-              setEditedQuote({ ...editedQuote, videoLink: e.target.value })
-            }
-            className="input input-bordered w-full text-gray-800"
-          />
-        ) : (
+        {/* Video Link Column */}
+        <td className="px-4 py-2" style={{ width: `${columnWidths.videoLink}px` }}>
           <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
             {quote.videoLink ? (
-              <a href={quote.videoLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+              <a
+                href={quote.videoLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
                 Link
               </a>
             ) : (
               "-"
             )}
           </div>
-        )}
-      </td>
-    </tr>
+        </td>
+      </tr>
+
+      {/* Modal Form */}
+      <EditModal
+        title="Edit Quote"
+        isOpen={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditedQuote({ ...quote });
+        }}
+        onSave={handleSave}
+      >
+        <DynamicForm<Quote> data={editedQuote} setData={setEditedQuote} fields={fieldConfig} />
+      </EditModal>
+    </>
   );
 }
