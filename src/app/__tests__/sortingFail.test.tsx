@@ -63,11 +63,11 @@ describe('Table sorting integration (expected to fail until implemented)', () =>
 
     // Click the Author header
     const authorHeader = screen.getByRole('columnheader', { name: /^Author$/i });
-    fireEvent.click(authorHeader);
+    fireEvent.click(authorHeader); // first click -> ascending (same as initial)
+    fireEvent.click(authorHeader); // second click -> descending
 
-    const newFirst = getFirstAuthor();
-
-    // Expect order to change
-    expect(newFirst).not.toBe(initialFirst);
+    await waitFor(() => {
+      expect(getFirstAuthor()).not.toBe(initialFirst);
+    });
   });
 });

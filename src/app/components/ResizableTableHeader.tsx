@@ -70,10 +70,11 @@ export default function ResizableTableHeader({
     <th
       ref={headerRef}
       className={`px-4 py-2 border-r border-gray-600 sticky top-0 z-30 bg-gray-800 text-white ${isResizing ? 'bg-gray-700' : ''}`}
+      aria-label={typeof children === 'string' ? children : undefined}
+      onClick={onSort}
     >
       <div
-        className="group flex items-center justify-between w-full cursor-pointer select-none"
-        onClick={onSort}
+        className="group flex items-center justify-between w-full select-none"
       >
         <span>{children}</span>
         {/* Arrow icon */}
