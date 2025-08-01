@@ -582,7 +582,7 @@ export default function AuthorsPage() {
                   placeholder="Search authors..."
                   value={searchTerm}
                   onChange={(e) => {
-                    const newTerm = e.target.value.toLowerCase().trim();
+                    const newTerm = e.target.value;
                     setSearchTerm(newTerm);
                     handleSearch(newTerm, searchField);
                   }}

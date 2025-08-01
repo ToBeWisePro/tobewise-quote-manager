@@ -80,7 +80,7 @@ export default function DataTable<T>({
 
   return (
     <div className={`overflow-hidden bg-white shadow-md rounded-lg ${heightClass}`}>
-      <div className="w-full overflow-auto">
+      <div className="w-full h-full overflow-auto">
         <table className="table-fixed border-collapse w-full text-black">
           <colgroup>
             {columns.map((c) => (
