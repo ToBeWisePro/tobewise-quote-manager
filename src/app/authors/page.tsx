@@ -483,11 +483,14 @@ export default function AuthorsPage() {
 
 
   /* -------------------------- keep search on refresh ------------------------- */
+  // Debounced search effect for responsiveness
   useEffect(() => {
-    // Re-apply the current search/filter whenever the underlying data changes
-    handleSearch(searchTerm, searchField);
+    const id = setTimeout(() => {
+      handleSearch(searchTerm, searchField);
+    }, 200);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authors]);
+  }, [searchTerm, searchField, authors]);
 
   /* ------------------------------------------------------------------------ */
   /*                                 render                                   */
@@ -584,7 +587,6 @@ export default function AuthorsPage() {
                   onChange={(e) => {
                     const newTerm = e.target.value;
                     setSearchTerm(newTerm);
-                    handleSearch(newTerm, searchField);
                   }}
                   className="input input-bordered w-full pl-10 bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary"
                 />

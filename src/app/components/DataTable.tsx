@@ -79,8 +79,8 @@ export default function DataTable<T>({
   };
 
   return (
-    <div className={`overflow-hidden bg-white shadow-md rounded-lg ${heightClass}`}>
-      <div className="w-full h-full overflow-auto">
+    <div className={`bg-white shadow-md rounded-lg flex flex-col ${heightClass}`}>
+      <div className="w-full flex-1 overflow-auto">
         <table className="table-fixed border-collapse w-full text-black">
           <colgroup>
             {columns.map((c) => (
