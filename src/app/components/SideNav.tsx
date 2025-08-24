@@ -11,15 +11,50 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 // IMPORTANT: requires NEXT_PUBLIC_GEMINI_API_KEY to be set
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+import { downloadQuotesAsCSV } from '../lib/csvExport';
+import { readDocuments } from '../lib/firebaseCrud';
 
 export default function SideNav() {
   const pathname = usePathname();
-  const { /* authenticated, */ } = useAuth();
+  // const { authenticated } = useAuth();
 
   // -----------------------------
   // Update Author Profiles Script
   // -----------------------------
   const [scriptRunning, setScriptRunning] = useState(false);
+
+  // -----------------------------
+  // Download Database Functionality
+  // -----------------------------
+  const [downloadLoading, setDownloadLoading] = useState(false);
+
+  const handleDownloadDatabase = useCallback(async () => {
+    if (downloadLoading) return;
+    
+    setDownloadLoading(true);
+    try {
+      toast.loading('Fetching all quotes...');
+      
+      // Fetch all quotes from the database
+      const quotes = await readDocuments('quotes');
+      
+      if (quotes.length === 0) {
+        toast.error('No quotes found in database');
+        return;
+      }
+      
+      // Download as CSV
+      downloadQuotesAsCSV(quotes);
+      toast.success(`Downloaded ${quotes.length} quotes as CSV`);
+      
+    } catch (error) {
+      console.error('Download database failed:', error);
+      toast.error('Failed to download database');
+    } finally {
+      setDownloadLoading(false);
+      toast.dismiss();
+    }
+  }, [downloadLoading]);
 
   const handleUpdateAuthorProfiles = useCallback(async () => {
     console.log('[PHOTO] ===== Starting author profile update process =====');
@@ -294,7 +329,7 @@ export default function SideNav() {
 
   return (
     <div className="w-64 bg-white h-screen fixed left-0 top-0 shadow-lg">
-      <div className="p-4">
+      <div className="p-4 h-full flex flex-col">
         <div className="flex items-center gap-2 mb-8">
           <Image
             src="/images/image.png"
@@ -375,7 +410,23 @@ export default function SideNav() {
           </Link>
         </nav>
 
-        {/* bottom tools removed */}
+        {/* Bottom Tools Section */}
+        <div className="mt-auto pt-8 border-t border-gray-200">
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={handleDownloadDatabase}
+              disabled={downloadLoading}
+              className={`w-full px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                downloadLoading
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {downloadLoading ? 'Downloading...' : 'Download Database (CSV)'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
