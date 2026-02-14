@@ -17,7 +17,7 @@
     "@langchain/google-genai": "^0.2.15",
     "firebase": "^11.1.0",
     "langchain": "^0.3.30",
-    "next": "15.1.4",
+    "next": "15.1.11",
     "papaparse": "^5.5.2",
     "react": "^19.0.0",
     "react-data-grid": "7.0.0-beta.52",
