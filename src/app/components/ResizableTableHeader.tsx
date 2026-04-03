@@ -64,12 +64,12 @@ export default function ResizableTableHeader({
   };
 
   const arrow = sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : '⇅';
-  const arrowClass = sortDir ? 'text-primary' : 'text-gray-400 group-hover:text-gray-300';
+  const arrowClass = sortDir ? 'text-blue-300' : 'text-slate-400 group-hover:text-white';
 
   return (
     <th
       ref={headerRef}
-      className={`px-4 py-2 border-r border-gray-600 sticky top-0 z-30 bg-gray-800 text-white ${isResizing ? 'bg-gray-700' : ''}`}
+      className={`sticky top-0 z-30 border-r border-slate-700 bg-slate-950 px-4 py-3 text-left text-sm font-semibold tracking-wide text-white ${isResizing ? 'bg-slate-900' : ''}`}
       aria-label={typeof children === 'string' ? children : undefined}
       onClick={onSort}
     >
@@ -87,7 +87,7 @@ export default function ResizableTableHeader({
           className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary active:bg-primary group"
           onMouseDown={handleMouseDown}
         >
-          <div className="absolute right-0 top-0 h-full w-1 bg-gray-600 group-hover:bg-primary group-active:bg-primary" />
+          <div className="absolute right-0 top-0 h-full w-1 bg-slate-700 group-hover:bg-blue-400 group-active:bg-blue-400" />
         </div>
       )}
     </th>

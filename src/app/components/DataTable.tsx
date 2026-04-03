@@ -79,7 +79,9 @@ export default function DataTable<T>({
   };
 
   return (
-    <div className={`bg-white shadow-md rounded-lg flex flex-col ${heightClass}`}>
+    <div
+      className={`flex flex-col overflow-hidden rounded-[32px] border border-slate-200/80 bg-white/90 shadow-[0_20px_70px_rgba(15,23,42,0.08)] backdrop-blur ${heightClass}`}
+    >
       <div className="w-full flex-1 overflow-auto">
         <table className="table-fixed border-collapse w-full text-black">
           <colgroup>
@@ -88,7 +90,7 @@ export default function DataTable<T>({
             ))}
           </colgroup>
           <thead>
-            <tr>
+            <tr className="bg-slate-950 text-white">
               {columns.map((c, idx) => (
                 <ResizableTableHeader
                   key={c.key}

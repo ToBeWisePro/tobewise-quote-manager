@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import SideNav from "../components/SideNav";
+import CenteredStatus from "../components/CenteredStatus";
+import DashboardPageHeader from "../components/DashboardPageHeader";
+import DashboardPageShell from "../components/DashboardPageShell";
+import PasswordGateCard from "../components/PasswordGateCard";
+import SimpleCountTable from "../components/SimpleCountTable";
 import { useAuth } from "../hooks/useAuth";
-import Image from "next/image";
 import toast from "react-hot-toast";
 
 interface AuthorCount {
@@ -29,7 +32,9 @@ export default function AuthorExplorerPage() {
         if (!name) return;
         counter.set(name, (counter.get(name) || 0) + 1);
       });
-      const list: AuthorCount[] = Array.from(counter.entries()).map(([author, count]) => ({ author, count }));
+      const list: AuthorCount[] = Array.from(counter.entries()).map(
+        ([author, count]) => ({ author, count }),
+      );
       list.sort((a, b) => a.author.localeCompare(b.author));
       setAuthors(list);
     } catch (e) {
@@ -58,77 +63,51 @@ export default function AuthorExplorerPage() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-primary">Loading...</p>
-        </div>
-      </div>
+      <CenteredStatus
+        message="Loading..."
+        className="flex min-h-screen items-center justify-center bg-neutral-light"
+      />
     );
   }
 
   if (!authenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="bg-white p-6 rounded-md shadow">
-          <div className="flex items-center justify-center mb-4">
-            <Image src="/images/image.png" alt="Icon" width={64} height={64} className="rounded-full" />
-          </div>
-          <h2 className="text-xl font-bold mb-4 text-primary text-center">Enter Password</h2>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="input input-bordered w-full mb-4 text-black"
-          />
-          <button onClick={handleLogin} className="bg-primary text-white px-4 py-2 rounded shadow w-full">
-            Login
-          </button>
-        </div>
-      </div>
+      <PasswordGateCard
+        password={password}
+        onPasswordChange={setPassword}
+        onSubmit={handleLogin}
+      />
     );
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-neutral-light">
-        <SideNav />
-        <main className="flex-1 ml-64 p-8">
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-              <p className="mt-4 text-primary">Loading authors...</p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <DashboardPageShell contentClassName="h-full">
+        <CenteredStatus message="Loading authors..." />
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-neutral-light">
-      <SideNav />
-      <main className="flex-1 ml-64 p-8 overflow-hidden">
-        <div className="h-full bg-white shadow-md rounded-lg overflow-y-auto">
-          <table className="table-fixed border-collapse w-full text-black h-full">
-            <thead>
-              <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                <th className="px-4 py-2 text-left w-1/2">Author</th>
-                <th className="px-4 py-2 text-left w-1/2">Quotes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {authors.map(({ author, count }) => (
-                <tr key={author} className="border-b last:border-b-0">
-                  <td className="px-4 py-2 whitespace-nowrap break-all text-black">{author}</td>
-                  <td className="px-4 py-2 text-black">{count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </main>
-    </div>
+    <DashboardPageShell contentClassName="flex w-full min-w-0 flex-col gap-6">
+      <DashboardPageHeader
+        className="dashboard-page-header"
+        eyebrow="Explorer"
+        title="Author Counts"
+        description="A quick rollup of quote volume by author name across the current library."
+        meta={`${authors.length} authors counted`}
+      />
+
+      <SimpleCountTable
+        rows={authors.map(({ author, count }) => ({
+          id: author,
+          label: author,
+          count,
+        }))}
+        labelHeading="Author"
+        countHeading="Quotes"
+        emptyMessage="No authors are available yet."
+      />
+    </DashboardPageShell>
   );
-} 
+}

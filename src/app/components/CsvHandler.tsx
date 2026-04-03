@@ -17,6 +17,7 @@ interface ValidationError {
 
 interface EditableQuote extends Quote {
   isEditing?: boolean;
+  originalQuote?: Quote;
 }
 
 interface DuplicateQuote {
@@ -36,6 +37,18 @@ type CsvRow = {
   subjects: string | string[];
   videoLink?: string;
 };
+
+const normalizeQuote = (quote: Quote) => ({
+  author: quote.author.trim(),
+  quoteText: quote.quoteText.trim(),
+  authorLink: quote.authorLink?.trim() ?? "",
+  contributedBy: quote.contributedBy?.trim() ?? "",
+  subjects: quote.subjects.map((subject) => subject.trim()).filter(Boolean),
+  videoLink: quote.videoLink?.trim() ?? "",
+});
+
+const areStringArraysEqual = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
 
 export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   const [previewData, setPreviewData] = useState<EditableQuote[]>([]);
@@ -196,13 +209,27 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
 
   const handleEdit = (index: number) => {
     setPreviewData(prev => prev.map((quote, i) => 
-      i === index ? { ...quote, isEditing: true } : quote
+      i === index
+        ? {
+            ...quote,
+            isEditing: true,
+            originalQuote: quote.originalQuote ?? {
+              author: quote.author,
+              quoteText: quote.quoteText,
+              subjects: [...quote.subjects],
+              authorLink: quote.authorLink,
+              contributedBy: quote.contributedBy,
+              videoLink: quote.videoLink,
+              id: quote.id,
+            },
+          }
+        : quote
     ));
   };
 
   const handleSave = (index: number) => {
     setPreviewData(prev => prev.map((quote, i) => 
-      i === index ? { ...quote, isEditing: false } : quote
+      i === index ? { ...quote, isEditing: false, originalQuote: undefined } : quote
     ));
   };
 
@@ -223,6 +250,23 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
       }
       return quote;
     }));
+  };
+
+  const hasPreviewQuoteChanges = (quote: EditableQuote) => {
+    const original = quote.originalQuote;
+    if (!original) return false;
+
+    const current = normalizeQuote(quote);
+    const baseline = normalizeQuote(original);
+
+    return (
+      current.author !== baseline.author ||
+      current.quoteText !== baseline.quoteText ||
+      current.authorLink !== baseline.authorLink ||
+      current.contributedBy !== baseline.contributedBy ||
+      current.videoLink !== baseline.videoLink ||
+      !areStringArraysEqual(current.subjects, baseline.subjects)
+    );
   };
 
   const findDuplicates = (newQuotes: EditableQuote[]): DuplicateQuote[] => {
@@ -435,7 +479,12 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
                       {quote.isEditing ? (
                         <button
                           onClick={() => handleSave(i)}
-                          className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 mr-2"
+                          disabled={!hasPreviewQuoteChanges(quote)}
+                          className={`mr-2 rounded px-2 py-1 text-white ${
+                            hasPreviewQuoteChanges(quote)
+                              ? "bg-green-500 hover:bg-green-600"
+                              : "cursor-not-allowed bg-gray-300"
+                          }`}
                         >
                           Save
                         </button>

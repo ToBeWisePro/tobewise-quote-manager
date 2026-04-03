@@ -2,6 +2,8 @@ export interface Author {
   id: string;
   name: string;
   profile_url?: string;
+  imageSource?: "upload" | "external_url" | "wikipedia" | "ai_discovery";
+  imageOriginalUrl?: string;
   description?: string;
   amazonPage?: string;
   amazonAffiliate?: string;

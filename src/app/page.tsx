@@ -1,123 +1,231 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
-import { db } from "./lib/firebase";
+
+import { useEffect, useMemo, useState } from "react";
+import { DataGrid, type Column, type SortColumn } from "react-data-grid";
 import {
   collection,
-  getDocs,
-  updateDoc,
   deleteDoc,
   doc,
+  getDocs,
+  updateDoc,
 } from "firebase/firestore";
-import EditableQuoteRow from "./components/EditableQuoteRow";
-import SideNav from "./components/SideNav";
-import { useAuth } from "./hooks/useAuth";
-import { Quote } from "./types/Quote";
-import ResizableTableHeader from "./components/ResizableTableHeader";
-import { updateDocument } from "./lib/firebaseCrud";
 import toast from "react-hot-toast";
-import Image from "next/image";
-import dynamic from "next/dynamic"; // placeholder import to satisfy TS for dynamic utilise
-// Note: AI helper modules are loaded dynamically within runBulkGeneration to keep them out of Jest's initial parse phase
+import CenteredStatus from "./components/CenteredStatus";
+import DashboardFilterPill from "./components/DashboardFilterPill";
+import DashboardPageHeader from "./components/DashboardPageHeader";
+import DashboardPageShell from "./components/DashboardPageShell";
+import DashboardSearchToolbar from "./components/DashboardSearchToolbar";
+import ExternalLinkChip from "./components/ExternalLinkChip";
+import PasswordGateCard from "./components/PasswordGateCard";
+import QuoteEditorModal from "./components/QuoteEditorModal";
+import { useAuth } from "./hooks/useAuth";
+import { db } from "./lib/firebase";
+import { updateDocument } from "./lib/firebaseCrud";
+import { Quote } from "./types/Quote";
+
+type SearchField = "all" | "author" | "quote" | "contributor" | "subjects";
+type QuoteStatusFilter =
+  | "all"
+  | "missingMetadata"
+  | "missingLinks"
+  | "unknownAuthor";
+
+const statusBadgeBaseClassName =
+  "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
+
+const searchMatches = (quote: Quote, term: string, field: SearchField) => {
+  const normalizedTerm = term.toLowerCase();
+
+  if (field === "author")
+    return quote.author.toLowerCase().includes(normalizedTerm);
+  if (field === "quote")
+    return quote.quoteText.toLowerCase().includes(normalizedTerm);
+  if (field === "contributor") {
+    return quote.contributedBy?.toLowerCase().includes(normalizedTerm) ?? false;
+  }
+  if (field === "subjects") {
+    return quote.subjects.some((subject) =>
+      subject.toLowerCase().includes(normalizedTerm),
+    );
+  }
+
+  return (
+    quote.author.toLowerCase().includes(normalizedTerm) ||
+    quote.quoteText.toLowerCase().includes(normalizedTerm) ||
+    (quote.contributedBy?.toLowerCase().includes(normalizedTerm) ?? false) ||
+    quote.subjects.some((subject) =>
+      subject.toLowerCase().includes(normalizedTerm),
+    )
+  );
+};
+
+const getSortValue = (quote: Quote, columnKey: string) => {
+  switch (columnKey) {
+    case "quote":
+      return quote.quoteText.toLowerCase();
+    case "attribution":
+      return `${quote.author} ${quote.contributedBy ?? ""}`.toLowerCase();
+    case "subjects":
+      return quote.subjects.join(", ").toLowerCase();
+    case "links":
+      return (
+        Number(Boolean(quote.authorLink)) + Number(Boolean(quote.videoLink))
+      );
+    case "status":
+      return (
+        Number(Boolean(quote.subjects.length)) +
+        Number(Boolean(quote.authorLink)) +
+        Number(Boolean(quote.videoLink)) +
+        Number(
+          Boolean(
+            quote.author && !quote.author.toLowerCase().includes("unknown"),
+          ),
+        )
+      );
+    default:
+      return quote.quoteText.toLowerCase();
+  }
+};
+
+const getQuoteStatusBadges = (quote: Quote) => {
+  const badges = [
+    {
+      key: "subjects",
+      label: quote.subjects.length
+        ? `${quote.subjects.length} subject${quote.subjects.length === 1 ? "" : "s"}`
+        : "Missing subjects",
+      className: quote.subjects.length
+        ? `${statusBadgeBaseClassName} border-sky-200 bg-sky-50 text-sky-700`
+        : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
+    },
+    {
+      key: "links",
+      label:
+        quote.authorLink && quote.videoLink ? "Links ready" : "Missing links",
+      className:
+        quote.authorLink && quote.videoLink
+          ? `${statusBadgeBaseClassName} border-emerald-200 bg-emerald-50 text-emerald-700`
+          : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
+    },
+    {
+      key: "author",
+      label:
+        quote.author && !quote.author.toLowerCase().includes("unknown")
+          ? "Author confirmed"
+          : "Unknown author",
+      className:
+        quote.author && !quote.author.toLowerCase().includes("unknown")
+          ? `${statusBadgeBaseClassName} border-violet-200 bg-violet-50 text-violet-700`
+          : `${statusBadgeBaseClassName} border-slate-200 bg-slate-100 text-slate-600`,
+    },
+  ];
+
+  if (quote.contributedBy?.trim()) {
+    badges.push({
+      key: "contributor",
+      label: `By ${quote.contributedBy.trim()}`,
+      className: `${statusBadgeBaseClassName} border-rose-200 bg-rose-50 text-rose-700`,
+    });
+  }
+
+  return badges;
+};
 
 export default function Home() {
   const { authenticated, loading: authLoading, login } = useAuth();
   const [password, setPassword] = useState("");
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
-  const [sortConfig, setSortConfig] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchField, setSearchField] = useState("all");
-  const [columnWidths, setColumnWidths] = useState({
-    quote: 280, // 35% of 800px
-    author: 120, // 15% of 800px
-    authorLink: 120, // 15% of 800px
-    contributedBy: 120, // 15% of 800px
-    subjects: 80, // 10% of 800px
-    videoLink: 80, // 10% of 800px
-  });
-  const [bulkGenerating, setBulkGenerating] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [searchField, setSearchField] = useState<SearchField>("all");
+  const [statusFilter, setStatusFilter] = useState<QuoteStatusFilter>("all");
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [sortColumns, setSortColumns] = useState<readonly SortColumn[]>([
+    { columnKey: "quote", direction: "ASC" },
+  ]);
 
   const fetchQuotes = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "quotes"));
-      const idMap = new Map(); // Track used IDs and their quotes
-      
-      const fetchedQuotes = await Promise.all(querySnapshot.docs.map(async (docSnap) => {
-        const data = docSnap.data();
-        const id = docSnap.id;
-        // If updatedAt is missing, set it to today (ISO) and persist
-        if (!data.updatedAt) {
-          const todayIso = new Date().toISOString();
-          try {
-            await updateDoc(doc(db, "quotes", id), { updatedAt: todayIso });
-            data.updatedAt = todayIso;
-          } catch (e) {
-            console.warn("Failed to set missing updatedAt", id, e);
+      const idMap = new Map();
+
+      const fetchedQuotes = (await Promise.all(
+        querySnapshot.docs.map(async (docSnap) => {
+          const data = docSnap.data();
+          const id = docSnap.id;
+
+          if (!data.updatedAt) {
+            const todayIso = new Date().toISOString();
+            try {
+              await updateDoc(doc(db, "quotes", id), { updatedAt: todayIso });
+              data.updatedAt = todayIso;
+            } catch (error) {
+              console.warn("Failed to set missing updatedAt", id, error);
+            }
           }
-        }
-        
-        // Track quotes by ID for debugging
-        if (idMap.has(id)) {
-          console.warn(`Duplicate ID found: ${id}`, {
-            existing: idMap.get(id),
-            new: data
-          });
-        } else {
-          idMap.set(id, data);
-        }
-        
-        return {
-          ...data,
-          id,
-        };
-      })) as Quote[];
-      
-      // Filter out any quotes that are missing required fields
-      const validQuotes = fetchedQuotes.filter(quote => 
-        quote.id && // Ensure ID exists
-        quote.author && 
-        quote.quoteText && 
-        quote.subjects && 
-        quote.subjects.length > 0
+
+          if (idMap.has(id)) {
+            console.warn(`Duplicate ID found: ${id}`, {
+              existing: idMap.get(id),
+              new: data,
+            });
+          } else {
+            idMap.set(id, data);
+          }
+
+          return {
+            ...data,
+            id,
+          };
+        }),
+      )) as Quote[];
+
+      const validQuotes = fetchedQuotes.filter(
+        (quote) =>
+          quote.id &&
+          quote.author &&
+          quote.quoteText &&
+          quote.subjects &&
+          quote.subjects.length > 0,
       );
-      
-      // Log any invalid quotes for debugging
-      const invalidQuotes = fetchedQuotes.filter(quote => 
-        !quote.id ||
-        !quote.author || 
-        !quote.quoteText || 
-        !quote.subjects || 
-        quote.subjects.length === 0
+
+      const invalidQuotes = fetchedQuotes.filter(
+        (quote) =>
+          !quote.id ||
+          !quote.author ||
+          !quote.quoteText ||
+          !quote.subjects ||
+          quote.subjects.length === 0,
       );
-      
+
       if (invalidQuotes.length > 0) {
-        console.warn('Found invalid quotes:', invalidQuotes);
+        console.warn("Found invalid quotes:", invalidQuotes);
       }
-      
-      // Sort quotes by author's first name
-      const sortedQuotes = validQuotes.sort((a, b) => {
-        const getFirstName = (name: string) => name.split(' ')[0].toLowerCase();
-        return getFirstName(a.author).localeCompare(getFirstName(b.author));
+
+      const sortedQuotes = validQuotes.sort((left, right) => {
+        const getFirstName = (name: string) => name.split(" ")[0].toLowerCase();
+        return getFirstName(left.author).localeCompare(
+          getFirstName(right.author),
+        );
       });
-      
+
       setQuotes(sortedQuotes);
-      setFilteredQuotes(sortedQuotes);
-      // Save/update the subjects list locally for autocomplete and Gemini prompts
+
       try {
         const allSubjects = Array.from(
           new Set(
-            sortedQuotes.flatMap((q) =>
-              (q.subjects || []).map((s) => s.trim().toLowerCase())
-            )
-          )
+            sortedQuotes.flatMap((quote) =>
+              (quote.subjects || []).map((subject) =>
+                subject.trim().toLowerCase(),
+              ),
+            ),
+          ),
         );
         if (typeof window !== "undefined") {
           localStorage.setItem("subjects", JSON.stringify(allSubjects));
         }
-      } catch (e) {
-        console.warn("Unable to persist subjects list", e);
+      } catch (error) {
+        console.warn("Unable to persist subjects list", error);
       }
     } catch (error) {
       console.error("Error fetching quotes:", error);
@@ -134,53 +242,95 @@ export default function Home() {
     }
   }, [authenticated]);
 
-  const handleSearch = (term: string, field: string) => {
-    if (!term.trim()) {
-      setFilteredQuotes(quotes);
-      return;
-    }
-
-    const searchTermLower = term.toLowerCase();
-    console.log('Starting search with:', {
-      term,
-      field,
-      totalQuotes: quotes.length,
-      currentFilteredQuotes: filteredQuotes.length
-    });
-
-    const filtered = quotes.filter((quote) => {
-      if (field === "all") {
-        const matches = (
-          quote.author.toLowerCase().includes(searchTermLower) ||
-          quote.quoteText.toLowerCase().includes(searchTermLower) ||
-          (quote.contributedBy?.toLowerCase().includes(searchTermLower) ?? false) ||
-          quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower))
-        );
-        if (matches) {
-          console.log('Match found:', quote.id, quote.author);
-        }
-        return matches;
-      } else if (field === "author") {
-        return quote.author.toLowerCase().includes(searchTermLower);
-      } else if (field === "quote") {
-        return quote.quoteText.toLowerCase().includes(searchTermLower);
-      } else if (field === "contributor") {
-        return quote.contributedBy?.toLowerCase().includes(searchTermLower) ?? false;
-      } else if (field === "subjects") {
-        return quote.subjects.some(subject => subject.toLowerCase().includes(searchTermLower));
+  const filteredQuotes = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+    return quotes.filter((quote) => {
+      if (statusFilter === "missingMetadata") {
+        const hasMissingMetadata =
+          !quote.subjects?.length ||
+          !quote.authorLink ||
+          !quote.videoLink ||
+          !quote.author ||
+          quote.author.toLowerCase().includes("unknown");
+        if (!hasMissingMetadata) return false;
       }
-      return false;
-    });
 
-    console.log('Search complete:', {
-      term,
-      field,
-      matchesFound: filtered.length,
-      matchedIds: filtered.map(q => q.id)
-    });
+      if (
+        statusFilter === "missingLinks" &&
+        quote.authorLink &&
+        quote.videoLink
+      )
+        return false;
 
-    setFilteredQuotes(filtered);
-  };
+      if (
+        statusFilter === "unknownAuthor" &&
+        quote.author &&
+        !quote.author.toLowerCase().includes("unknown")
+      ) {
+        return false;
+      }
+
+      if (!normalizedTerm) return true;
+      return searchMatches(quote, normalizedTerm, searchField);
+    });
+  }, [quotes, searchField, searchTerm, statusFilter]);
+
+  const sortedQuotes = useMemo(() => {
+    if (!sortColumns.length) return filteredQuotes;
+
+    return [...filteredQuotes].sort((left, right) => {
+      for (const sortColumn of sortColumns) {
+        const leftValue = getSortValue(left, sortColumn.columnKey);
+        const rightValue = getSortValue(right, sortColumn.columnKey);
+
+        let comparison = 0;
+        if (typeof leftValue === "number" && typeof rightValue === "number") {
+          comparison = leftValue - rightValue;
+        } else {
+          comparison = String(leftValue).localeCompare(
+            String(rightValue),
+            undefined,
+            {
+              sensitivity: "base",
+            },
+          );
+        }
+
+        if (comparison !== 0) {
+          return sortColumn.direction === "DESC" ? comparison * -1 : comparison;
+        }
+      }
+
+      return 0;
+    });
+  }, [filteredQuotes, sortColumns]);
+
+  const quoteStats = useMemo(
+    () => ({
+      total: quotes.length,
+      missingMetadata: quotes.filter(
+        (quote) =>
+          !quote.subjects?.length ||
+          !quote.authorLink ||
+          !quote.videoLink ||
+          !quote.author ||
+          quote.author.toLowerCase().includes("unknown"),
+      ).length,
+      missingLinks: quotes.filter(
+        (quote) => !quote.authorLink || !quote.videoLink,
+      ).length,
+      unattributed: quotes.filter(
+        (quote) =>
+          !quote.author || quote.author.toLowerCase().includes("unknown"),
+      ).length,
+    }),
+    [quotes],
+  );
+
+  const selectedQuote = useMemo(
+    () => quotes.find((quote) => quote.id === selectedQuoteId) ?? null,
+    [quotes, selectedQuoteId],
+  );
 
   const handleLogin = () => {
     if (login(password)) {
@@ -193,8 +343,8 @@ export default function Home() {
 
   const handleSave = async (updatedQuote: Quote) => {
     const cleanSubjects = updatedQuote.subjects
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+      .map((subject) => subject.trim())
+      .filter((subject) => subject.length > 0);
 
     const quoteData = {
       author: updatedQuote.author,
@@ -203,19 +353,23 @@ export default function Home() {
       authorLink: updatedQuote.authorLink,
       contributedBy: updatedQuote.contributedBy,
       videoLink: updatedQuote.videoLink,
+      updatedAt: new Date().toISOString(),
     } as Partial<Quote>;
 
-    const toastId = toast.loading("Saving quote…");
+    const toastId = toast.loading("Saving quote...");
     try {
       await updateDocument<Quote>("quotes", updatedQuote.id, quoteData);
       await fetchQuotes();
       toast.success("Quote updated successfully", { id: toastId });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error?.message || "Failed to save quote", { id: toastId });
-    } finally {
-      // Dismiss loading toast
-      toast.dismiss(toastId as any);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save quote",
+        {
+          id: toastId,
+        },
+      );
+      throw error;
     }
   };
 
@@ -224,329 +378,324 @@ export default function Home() {
     if (!confirmed) return;
 
     await deleteDoc(doc(db, "quotes", id));
+    if (selectedQuoteId === id) {
+      setSelectedQuoteId(null);
+    }
     await fetchQuotes();
   };
 
-  const handleSort = (key: keyof typeof columnWidths) => {
-    setSortConfig(prev => {
-      if (prev && prev.key === key) {
-        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
-      }
-      return { key, dir: 'asc' };
-    });
-  };
+  const columns: Column<Quote>[] = [
+    {
+      key: "quote",
+      name: "Quote",
+      width: 500,
+      minWidth: 420,
+      frozen: true,
+      sortable: true,
+      resizable: true,
+      cellClass: "dashboard-data-grid-wrap-cell",
+      renderCell: ({ row }) => (
+        <div className="flex h-full flex-col justify-between overflow-hidden py-4">
+          <div className="quote-row-quote min-w-0 flex-1 overflow-hidden">
+            <p
+              className="dashboard-wrap-text dashboard-line-clamp-4 text-[15px] leading-7 text-slate-900"
+              title={row.quoteText}
+            >
+              {row.quoteText}
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-3 pt-3 font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400">
+            <span>
+              {row.quoteText.split(/\s+/).filter(Boolean).length} words
+            </span>
+            {row.updatedAt ? (
+              <span>
+                Updated {new Date(row.updatedAt).toLocaleDateString()}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "attribution",
+      name: "Attribution",
+      width: 290,
+      minWidth: 250,
+      sortable: true,
+      resizable: true,
+      cellClass: "dashboard-data-grid-wrap-cell",
+      renderCell: ({ row }) => (
+        <div className="flex h-full flex-col justify-center gap-2 overflow-hidden py-5">
+          <div
+            className="dashboard-wrap-text dashboard-line-clamp-2 text-base font-semibold text-slate-900"
+            title={row.author}
+          >
+            {row.author}
+          </div>
+          <div
+            className="dashboard-wrap-text dashboard-line-clamp-2 text-sm leading-6 text-slate-500"
+            title={
+              row.contributedBy?.trim()
+                ? `Contributed by ${row.contributedBy.trim()}`
+                : "No contributor noted"
+            }
+          >
+            {row.contributedBy?.trim()
+              ? `Contributed by ${row.contributedBy.trim()}`
+              : "No contributor noted"}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "subjects",
+      name: "Subjects",
+      width: 320,
+      minWidth: 270,
+      sortable: true,
+      resizable: true,
+      cellClass: "dashboard-data-grid-wrap-cell",
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center overflow-hidden py-5">
+          {row.subjects.length ? (
+            <div className="flex flex-wrap gap-2">
+              {row.subjects.map((subject) => (
+                <span
+                  key={`${row.id}-${subject}`}
+                  className="inline-flex items-center rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
+                >
+                  {subject}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-sm italic text-slate-400">
+              No subjects yet
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "links",
+      name: "Links",
+      width: 280,
+      minWidth: 250,
+      sortable: true,
+      resizable: true,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center overflow-hidden py-5">
+          <div className="w-full space-y-2">
+            <ExternalLinkChip href={row.authorLink} label="Author Link" />
+            <ExternalLinkChip href={row.videoLink} label="Video Search" />
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      name: "Status",
+      width: 260,
+      minWidth: 240,
+      sortable: true,
+      resizable: true,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center overflow-hidden py-5">
+          <div className="flex flex-wrap gap-2">
+            {getQuoteStatusBadges(row).map((badge) => (
+              <span key={badge.key} className={badge.className}>
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      name: "Actions",
+      width: 180,
+      minWidth: 160,
+      resizable: true,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center py-5">
+          <div className="flex w-full flex-col gap-2">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedQuoteId(row.id);
+              }}
+              className="rounded-[18px] bg-slate-900 px-3 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleDelete(row.id);
+              }}
+              className="rounded-[18px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-600 transition hover:border-red-300 hover:bg-red-100"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ),
+    },
+  ];
 
-  const sortedQuotes = useMemo(() => {
-    if (!sortConfig) return filteredQuotes;
-    const sorted = [...filteredQuotes].sort((a, b) => {
-      let vA: any;
-      let vB: any;
-      if (sortConfig.key === 'quote') {
-        vA = a.quoteText;
-        vB = b.quoteText;
-      } else {
-        vA = (a as any)[sortConfig.key];
-        vB = (b as any)[sortConfig.key];
-      }
-      const compA = Array.isArray(vA) ? vA.join(', ') : vA ?? '';
-      const compB = Array.isArray(vB) ? vB.join(', ') : vB ?? '';
-      if (typeof compA === 'number' && typeof compB === 'number') {
-        return compA - compB;
-      }
-      return String(compA).localeCompare(String(compB), undefined, { sensitivity: 'base' });
-    });
-    if (sortConfig.dir === 'desc') sorted.reverse();
-    return sorted;
-  }, [filteredQuotes, sortConfig]);
-
-  const handleColumnResize = (column: keyof typeof columnWidths) => (width: number) => {
-    setColumnWidths(prev => ({
-      ...prev,
-      [column]: width
-    }));
-  };
-
-  /* -------------------------- keep search on refresh ------------------------- */
-  useEffect(() => {
-    // Re-apply the current search/filter whenever the underlying data changes
-    handleSearch(searchTerm, searchField);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotes]);
-
-  /* ---------------------- bulk AI generation over dataset --------------------- */
-  const runBulkGeneration = async () => {
-    if (bulkGenerating) return;
-    try {
-      const stored = typeof window !== "undefined" ? localStorage.getItem("subjects") : null;
-      const allSubjects = stored ? (JSON.parse(stored) as string[]) : [];
-
-      const candidates = quotes.filter(
-        (q) =>
-          !q.subjects?.length ||
-          !q.author || q.author.toLowerCase().includes("unknown") ||
-          !q.authorLink || !q.videoLink,
-      );
-      const total = candidates.length;
-      if (!total) {
-        toast("All quotes already have metadata.");
-        return;
-      }
-
-      setBulkGenerating(true);
-      setBulkProgress({ done: 0, total });
-
-      // Dynamically import AI helper modules (avoids Jest ESM issues)
-      const [{ generateSubjects }, { generateAuthor }, { generateAuthorLink }, { generateVideoLink }, { ensureAuthorProfile }] = await Promise.all([
-        import("./lib/generateSubjects"),
-        import("./lib/generateAuthor"),
-        import("./lib/generateAuthorLink"),
-        import("./lib/generateVideoLink"),
-        import("./lib/ensureAuthorProfile"),
-      ]);
-
-      for (let i = 0; i < total; i++) {
-        const q = candidates[i];
-        try {
-          // 1) Generate subjects & author
-          const [subjects, authorName] = await Promise.all([
-            q.subjects?.length ? Promise.resolve(q.subjects) : generateSubjects(q.quoteText, allSubjects),
-            (!q.author || q.author.toLowerCase().includes("unknown")) ? generateAuthor(q.quoteText) : Promise.resolve(q.author),
-          ]);
-
-          let finalAuthor = authorName;
-          const updates: any = {};
-          if (!q.subjects?.length && subjects.length) updates.subjects = subjects;
-          if ((!q.author || q.author.toLowerCase().includes("unknown")) && authorName) updates.author = authorName;
-
-          // 2) Generate links based on resolved author name
-          if (finalAuthor && (!q.authorLink || !q.videoLink)) {
-            const [authorLink, videoLink] = await Promise.all([
-              !q.authorLink ? generateAuthorLink(finalAuthor) : Promise.resolve(q.authorLink!),
-              !q.videoLink ? generateVideoLink(finalAuthor) : Promise.resolve(q.videoLink!),
-            ]);
-            if (!q.authorLink && authorLink !== "INVALID_LINK") updates.authorLink = authorLink;
-            if (!q.videoLink) updates.videoLink = videoLink;
-          }
-
-          if (Object.keys(updates).length) {
-            updates.updatedAt = new Date().toISOString();
-            await updateDoc(doc(db, "quotes", q.id), updates);
-          }
-
-          // Ensure author profile exists
-          if (finalAuthor) {
-            await ensureAuthorProfile(finalAuthor);
-          }
-        } catch (e) {
-          console.warn("Bulk generation failed for", q.id, e);
-        } finally {
-          setBulkProgress({ done: i + 1, total });
-        }
-      }
-      await fetchQuotes();
-      toast.success("Bulk AI generation complete!");
-    } finally {
-      setBulkGenerating(false);
-      setBulkProgress(null);
-    }
-  };
+  const filterButtons = [
+    {
+      key: "all" as const,
+      label: "All quotes",
+      count: quoteStats.total,
+      tone: "neutral" as const,
+    },
+    {
+      key: "missingMetadata" as const,
+      label: "Missing metadata",
+      count: quoteStats.missingMetadata,
+      tone: "amber" as const,
+    },
+    {
+      key: "missingLinks" as const,
+      label: "Missing links",
+      count: quoteStats.missingLinks,
+      tone: "sky" as const,
+    },
+    {
+      key: "unknownAuthor" as const,
+      label: "Unknown authors",
+      count: quoteStats.unattributed,
+      tone: "violet" as const,
+    },
+  ];
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-primary">Loading...</p>
-        </div>
-      </div>
+      <CenteredStatus
+        message="Loading..."
+        className="flex min-h-screen items-center justify-center bg-neutral-light"
+      />
     );
   }
 
   if (!authenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="bg-white p-6 rounded-md shadow">
-          <div className="flex items-center justify-center mb-4">
-            <Image
-              src="/images/image.png"
-              alt="Quote Manager Icon"
-              width={64}
-              height={64}
-              className="rounded-full"
-            />
-          </div>
-          <h2 className="text-xl font-bold mb-4 text-primary text-center">
-            Enter Password
-          </h2>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="input input-bordered w-full mb-4 text-black"
-          />
-          <button
-            onClick={handleLogin}
-            className="bg-primary text-white px-4 py-2 rounded shadow w-full"
-          >
-            Login
-          </button>
-        </div>
-      </div>
+      <PasswordGateCard
+        password={password}
+        onPasswordChange={setPassword}
+        onSubmit={handleLogin}
+      />
     );
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-neutral-light">
-        <SideNav />
-        <main className="flex-1 ml-64 p-8">
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-4 text-primary">Loading quotes...</p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <DashboardPageShell contentClassName="h-full">
+        <CenteredStatus message="Loading quotes..." />
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-neutral-light">
-      <SideNav />
-      <main className="flex-1 ml-64 p-8 overflow-x-hidden">
-        <div className="max-w-7xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
-          <div className="flex-none">
-            <div className="flex flex-col sm:flex-row gap-4 mb-4 items-start sm:items-center">
-              <select
-                value={searchField}
-                onChange={(e) => {
-                  setSearchField(e.target.value);
-                  handleSearch(searchTerm, e.target.value);
-                }}
-                className="select select-bordered bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary w-full sm:w-auto"
-              >
-                <option value="all">All Fields</option>
-                <option value="author">Author</option>
-                <option value="quote">Quote Text</option>
-                <option value="contributor">Contributor</option>
-                <option value="subjects">Subjects</option>
-              </select>
-              
-              <div className="relative w-full sm:w-auto sm:flex-1">
-                <input
-                  type="text"
-                  placeholder="Search quotes..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    const newSearchTerm = e.target.value;
-                    setSearchTerm(newSearchTerm);
-                    handleSearch(newSearchTerm, searchField);
-                  }}
-                  className="input input-bordered w-full pl-10 bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary"
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+    <DashboardPageShell contentClassName="flex w-full min-w-0 flex-col gap-4">
+      <DashboardPageHeader
+        className="dashboard-page-header"
+        childrenClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+        eyebrow="Quote Library"
+        title="Quotes"
+        description="Search, scan, and edit quotes quickly without the table fighting you."
+        meta={`${filteredQuotes.length} of ${quotes.length} quotes shown`}
+      >
+        {filterButtons.map((filterButton) => (
+          <DashboardFilterPill
+            key={filterButton.key}
+            label={filterButton.label}
+            count={filterButton.count}
+            tone={filterButton.tone}
+            active={statusFilter === filterButton.key}
+            onClick={() => setStatusFilter(filterButton.key)}
+          />
+        ))}
+      </DashboardPageHeader>
+
+      <section className="quote-workbench overflow-hidden rounded-[32px] border border-slate-200/80 shadow-[0_24px_80px_rgba(15,23,42,0.12)]">
+        <div className="quote-workbench-head border-b border-slate-200/80 px-5 pb-5 pt-5 sm:px-6">
+          <DashboardSearchToolbar
+            selectValue={searchField}
+            onSelectChange={(value) => setSearchField(value as SearchField)}
+            selectOptions={[
+              { value: "all", label: "All fields" },
+              { value: "author", label: "Author" },
+              { value: "quote", label: "Quote text" },
+              { value: "contributor", label: "Contributor" },
+              { value: "subjects", label: "Subjects" },
+            ]}
+            searchValue={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search quotes..."
+            rightContent={
+              <div className="text-right">
+                <div className="text-sm font-medium text-slate-700">
+                  {sortedQuotes.length} result
+                  {sortedQuotes.length === 1 ? "" : "s"}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Double-click a quote or attribution cell to edit.
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-hidden bg-white shadow-md rounded-lg">
-            <div className="h-full overflow-y-auto overflow-x-hidden">
-              <div className="w-full overflow-x-auto">
-                <table className="table-fixed border-collapse w-full">
-                  <colgroup>
-                    <col style={{ width: `${columnWidths.quote}px` }} />
-                    <col style={{ width: `${columnWidths.author}px` }} />
-                    <col style={{ width: `${columnWidths.authorLink}px` }} />
-                    {searchField === 'contributor' && <col style={{ width: `${columnWidths.contributedBy}px` }} />}
-                    <col style={{ width: `${columnWidths.subjects}px` }} />
-                    <col style={{ width: `${columnWidths.videoLink}px` }} />
-                  </colgroup>
-                  <thead>
-                    <tr className="bg-gray-800 text-white sticky top-0 z-30">
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.quote}
-                        minWidth={200}
-                        onResize={handleColumnResize('quote')}
-                        onSort={() => handleSort('quote')}
-                        sortDir={sortConfig?.key === 'quote' ? sortConfig.dir : undefined}
-                      >
-                        Quote
-                      </ResizableTableHeader>
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.author}
-                        minWidth={100}
-                        onResize={handleColumnResize('author')}
-                        onSort={() => handleSort('author')}
-                        sortDir={sortConfig?.key === 'author' ? sortConfig.dir : undefined}
-                      >
-                        Author
-                      </ResizableTableHeader>
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.authorLink}
-                        minWidth={100}
-                        onResize={handleColumnResize('authorLink')}
-                        onSort={() => handleSort('authorLink')}
-                        sortDir={sortConfig?.key === 'authorLink' ? sortConfig.dir : undefined}
-                      >
-                        Author Link
-                      </ResizableTableHeader>
-                      {searchField === 'contributor' && (
-                        <ResizableTableHeader
-                          initialWidth={columnWidths.contributedBy}
-                          minWidth={100}
-                          onResize={handleColumnResize('contributedBy')}
-                          onSort={() => handleSort('contributedBy')}
-                          sortDir={sortConfig?.key === 'contributedBy' ? sortConfig.dir : undefined}
-                        >
-                          Contributed By
-                        </ResizableTableHeader>
-                      )}
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.subjects}
-                        minWidth={80}
-                        onResize={handleColumnResize('subjects')}
-                        onSort={() => handleSort('subjects')}
-                        sortDir={sortConfig?.key === 'subjects' ? sortConfig.dir : undefined}
-                      >
-                        Subjects
-                      </ResizableTableHeader>
-                      <ResizableTableHeader
-                        initialWidth={columnWidths.videoLink}
-                        minWidth={80}
-                        onResize={handleColumnResize('videoLink')}
-                        onSort={() => handleSort('videoLink')}
-                        sortDir={sortConfig?.key === 'videoLink' ? sortConfig.dir : undefined}
-                        isLastColumn
-                      >
-                        Video Link
-                      </ResizableTableHeader>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedQuotes.map((quote, index) => (
-                      <EditableQuoteRow
-                        key={`${quote.id}-${index}`}
-                        quote={quote}
-                        onSave={handleSave}
-                        onDelete={handleDelete}
-                        columnWidths={columnWidths}
-                        showContributedBy={searchField === 'contributor'}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+            }
+            stickyTopClassName="top-[4.75rem] lg:top-4"
+          />
         </div>
-      </main>
 
-    </div>
+        <div role="table" aria-label="Quotes table" className="overflow-hidden">
+          <DataGrid
+            className="dashboard-data-grid quote-grid rdg-light"
+            style={{
+              width: "100%",
+              height: "min(78vh, 980px)",
+              border: "none",
+            }}
+            columns={columns}
+            rows={sortedQuotes}
+            rowKeyGetter={(quote) => quote.id}
+            rowHeight={176}
+            headerRowHeight={60}
+            defaultColumnOptions={{ resizable: true, sortable: true }}
+            sortColumns={sortColumns}
+            onSortColumnsChange={(nextSortColumns) =>
+              setSortColumns(nextSortColumns.slice(-1))
+            }
+            onCellDoubleClick={(args, event) => {
+              if (args.column.key === "actions" || args.column.key === "links")
+                return;
+              event.preventGridDefault();
+              setSelectedQuoteId(args.row.id);
+            }}
+            renderers={{
+              noRowsFallback: (
+                <div className="flex h-full items-center justify-center px-6 py-20 text-center text-sm text-slate-500">
+                  No quotes match the current search or filter.
+                </div>
+              ),
+            }}
+          />
+        </div>
+      </section>
+
+      {selectedQuote ? (
+        <QuoteEditorModal
+          quote={selectedQuote}
+          isOpen
+          onClose={() => setSelectedQuoteId(null)}
+          onSave={handleSave}
+        />
+      ) : null}
+    </DashboardPageShell>
   );
 }

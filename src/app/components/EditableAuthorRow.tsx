@@ -1,188 +1,153 @@
 "use client";
+
 import { useState } from "react";
 import { Author } from "../types/Author";
-import EditModal from "./EditModal";
-import DynamicForm, { FieldConfig } from "./DynamicForm";
+import {
+  inferImageSource,
+  type ResolvedAuthorImage,
+} from "../lib/authorProfile";
+import AuthorEditorModal, {
+  AuthorEditorSavePayload,
+} from "./AuthorEditorModal";
 
 interface EditableAuthorRowProps {
   author: Author;
-  onSave: (author: Author) => Promise<void> | void;
-  onGenerate: (author: Author) => void;
-  isGenerating?: boolean;
+  onSave: (payload: AuthorEditorSavePayload) => Promise<void> | void;
+  onFindPhoto: (author: Author) => Promise<void> | void;
+  onAutoFetchImage: (authorName: string) => Promise<ResolvedAuthorImage | null>;
+  isFindingPhoto?: boolean;
   columnWidths: {
-    name: number;
-    profile: number;
+    author: number;
+    photo: number;
     description: number;
-    amazonPage: number;
+    status: number;
+    actions: number;
   };
 }
+
+const badgeClassName =
+  "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
+
+const getStatusBadges = (author: Author) => {
+  const badges = [
+    {
+      key: "photo",
+      label: author.profile_url ? "Photo ready" : "Missing photo",
+      className: author.profile_url
+        ? `${badgeClassName} border-emerald-200 bg-emerald-50 text-emerald-700`
+        : `${badgeClassName} border-amber-200 bg-amber-50 text-amber-700`,
+    },
+    {
+      key: "description",
+      label: author.description?.trim() ? "Bio ready" : "Missing bio",
+      className: author.description?.trim()
+        ? `${badgeClassName} border-sky-200 bg-sky-50 text-sky-700`
+        : `${badgeClassName} border-slate-200 bg-slate-100 text-slate-600`,
+    },
+  ];
+
+  const imageSource = inferImageSource(author);
+  if (imageSource) {
+    badges.push({
+      key: "source",
+      label:
+        imageSource === "external_url"
+          ? "Source: URL"
+          : imageSource === "ai_discovery"
+            ? "Source: AI"
+            : imageSource === "wikipedia"
+              ? "Source: Wikipedia"
+              : "Source: Upload",
+      className: `${badgeClassName} border-violet-200 bg-violet-50 text-violet-700`,
+    });
+  }
+
+  return badges;
+};
 
 export default function EditableAuthorRow({
   author,
   onSave,
-  onGenerate,
-  isGenerating = false,
+  onFindPhoto,
+  onAutoFetchImage,
+  isFindingPhoto = false,
   columnWidths,
 }: EditableAuthorRowProps) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [editedAuthor, setEditedAuthor] = useState<Author>({ ...author });
-
-  const fieldConfig: FieldConfig[] = [
-    { name: "name", label: "Name", type: "text" },
-    { name: "profile_url", label: "Profile URL", type: "url" },
-    { name: "description", label: "Description", type: "textarea" },
-    { name: "amazonPage", label: "Amazon Page", type: "url" },
-  ];
-
-  const handleSave = async () => {
-    await onSave(editedAuthor);
-  };
 
   return (
     <>
-      <tr className="border-t hover:bg-gray-50">
-        {/* Actions & Name column (sticky) */}
-        <td
-          className="px-4 py-2 sticky left-0 bg-white z-30 border-r-2 border-gray-300"
-          style={{ width: `${columnWidths.name}px` }}
-        >
+      <tr className="border-t border-slate-200/70 bg-white/70 align-top transition hover:bg-slate-50/90">
+        <td className="px-4 py-4" style={{ width: `${columnWidths.author}px` }}>
+          <div className="space-y-2">
+            <div className="text-base font-semibold text-slate-900">{author.name}</div>
+            <div className="text-sm text-slate-500">
+              {author.amazonPage ? "Amazon metadata saved" : "No Amazon page saved"}
+            </div>
+          </div>
+        </td>
+
+        <td className="px-4 py-4" style={{ width: `${columnWidths.photo}px` }}>
+          {author.profile_url ? (
+            <div className="space-y-3">
+              <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-slate-100">
+                <img
+                  src={author.profile_url}
+                  alt={`${author.name} headshot`}
+                  className="h-24 w-24 object-cover"
+                />
+              </div>
+              <span className="text-xs font-medium text-slate-500">512px square</span>
+            </div>
+          ) : (
+            <div className="flex h-24 w-24 items-center justify-center rounded-[22px] border border-dashed border-slate-300 bg-slate-50 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+              No photo
+            </div>
+          )}
+        </td>
+
+        <td className="px-4 py-4" style={{ width: `${columnWidths.description}px` }}>
+          <div className="max-h-[180px] overflow-y-auto pr-2 text-sm leading-6 text-slate-600">
+            {author.description?.trim() ? author.description : "No author description saved yet."}
+          </div>
+        </td>
+
+        <td className="px-4 py-4" style={{ width: `${columnWidths.status}px` }}>
+          <div className="flex flex-wrap gap-2">
+            {getStatusBadges(author).map((badge) => (
+              <span key={badge.key} className={badge.className}>
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        </td>
+
+        <td className="px-4 py-4" style={{ width: `${columnWidths.actions}px` }}>
           <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setModalOpen(true)}
-                className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
-              >
-                Edit
-              </button>
-              {!author.profile_url && !author.description && (
-                <button
-                  onClick={() => onGenerate(author)}
-                  className="bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
-                >
-                  AI Generate
-                </button>
-              )}
-            </div>
-            <div className="text-gray-800 font-medium break-words whitespace-normal max-h-[100px] overflow-y-auto">
-              {author.name}
-            </div>
-          </div>
-        </td>
-
-        {/* Profile URL column */}
-        <td
-          className="px-4 py-2 border-r border-gray-200"
-          style={{ width: `${columnWidths.profile}px` }}
-        >
-          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
-            {author.profile_url ? (
-              <a
-                href={author.profile_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline break-all"
-              >
-                {author.profile_url}
-              </a>
-            ) : isGenerating ? (
-              <div className="flex justify-center">
-                <svg
-                  className="animate-spin h-4 w-4 text-gray-500"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4l-3 3 3 3H4z"
-                  />
-                </svg>
-              </div>
-            ) : (
-              "-"
-            )}
-          </div>
-        </td>
-
-        {/* Description column */}
-        <td
-          className="px-4 py-2"
-          style={{ width: `${columnWidths.description}px` }}
-        >
-          <div className="text-gray-800 break-words whitespace-normal max-h-[200px] overflow-y-auto">
-            {author.description ? (
-              author.description
-            ) : isGenerating ? (
-              <div className="flex justify-center">
-                <svg
-                  className="animate-spin h-4 w-4 text-gray-500"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 0 0 00-8 8h4l-3 3 3 3H4z"
-                  />
-                </svg>
-              </div>
-            ) : (
-              "-"
-            )}
-          </div>
-        </td>
-
-        {/* Amazon Page column */}
-        <td
-          className="px-4 py-2 border-l border-gray-200"
-          style={{ width: `${columnWidths.amazonPage}px` }}
-        >
-          <div className="text-gray-800 break-words whitespace-normal max-h-[100px] overflow-y-auto">
-            {author.amazonPage ? (
-              <a
-                href={author.amazonPage}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline break-all"
-              >
-                {author.amazonPage}
-              </a>
-            ) : (
-              "-"
-            )}
+            <button
+              onClick={() => setModalOpen(true)}
+              className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Manage
+            </button>
+            <button
+              onClick={() => onFindPhoto(author)}
+              disabled={isFindingPhoto}
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isFindingPhoto ? "Searching..." : author.profile_url ? "Refresh Photo" : "Find Photo"}
+            </button>
           </div>
         </td>
       </tr>
 
-      <EditModal
-        title="Edit Author"
+      <AuthorEditorModal
+        author={author}
         isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setEditedAuthor({ ...author });
-        }}
-        onSave={handleSave}
-      >
-        <DynamicForm<Author> data={editedAuthor} setData={setEditedAuthor} fields={fieldConfig} />
-      </EditModal>
+        onClose={() => setModalOpen(false)}
+        onSave={onSave}
+        onAutoFetchImage={onAutoFetchImage}
+      />
     </>
   );
 }

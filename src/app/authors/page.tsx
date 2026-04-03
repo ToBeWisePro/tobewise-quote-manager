@@ -1,157 +1,227 @@
 "use client";
 
-/* -------------------------------------------------------------------------- */
-/*                                    imports                                */
-/* -------------------------------------------------------------------------- */
-import { useState, useEffect } from "react";
-import { db, storage } from "../lib/firebase";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DataGrid,
+  type Column,
+  type RenderEditCellProps,
+  type SortColumn,
+} from "react-data-grid";
+import toast from "react-hot-toast";
 import {
   collection,
-  getDocs,
-  updateDoc,
+  deleteField,
   doc,
+  getDocs,
   query,
+  updateDoc,
   where,
 } from "firebase/firestore";
-import {
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from "firebase/storage";
-import { getDoc } from "firebase/firestore";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-
-import EditableAuthorRow from "../components/EditableAuthorRow";
-import SideNav from "../components/SideNav";
+import { db } from "../lib/firebase";
+import CenteredStatus from "../components/CenteredStatus";
+import DashboardFilterPill from "../components/DashboardFilterPill";
+import DashboardPageHeader from "../components/DashboardPageHeader";
+import DashboardPageShell from "../components/DashboardPageShell";
+import DashboardSearchToolbar from "../components/DashboardSearchToolbar";
+import AuthorEditorModal, {
+  type AuthorEditorSavePayload,
+} from "../components/AuthorEditorModal";
+import PasswordGateCard from "../components/PasswordGateCard";
 import { useAuth } from "../hooks/useAuth";
+import {
+  cacheAuthorImageFromUrl,
+  deleteStoredAuthorImage,
+  generateAuthorDescription,
+  inferImageSource,
+  resolveAuthorImageCandidate,
+  uploadAuthorImageBlob,
+  type ResolvedAuthorImage,
+} from "../lib/authorProfile";
 import { Author } from "../types/Author";
 
-import DataTable, { ColumnDef } from "../components/DataTable";
-import Image from "next/image";
-import toast from "react-hot-toast";
+type SearchField = "all" | "name" | "description";
+type StatusFilter = "all" | "missingPhoto" | "missingDescription";
+type BulkTask = "images" | "descriptions" | null;
 
-/* -------------------------------------------------------------------------- */
-/*                               helper functions                             */
-/* -------------------------------------------------------------------------- */
+interface BulkProgress {
+  done: number;
+  total: number;
+  label: string;
+}
 
-const squareImageBlob = async (blob: Blob): Promise<Blob> => {
-  const imgBitmap = await createImageBitmap(blob);
-  const size = Math.min(imgBitmap.width, imgBitmap.height);
+const statusBadgeBaseClassName =
+  "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
 
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 512;
+const sourceLabelMap: Record<NonNullable<Author["imageSource"]>, string> = {
+  upload: "Upload",
+  external_url: "External URL",
+  wikipedia: "Wikipedia",
+  ai_discovery: "AI discovery",
+};
 
-  const ctx = canvas.getContext("2d")!;
-  const sx = (imgBitmap.width - size) / 2;
-  const sy = (imgBitmap.height - size) / 2;
-  ctx.drawImage(imgBitmap, sx, sy, size, size, 0, 0, 512, 512);
+const searchMatches = (author: Author, term: string, field: SearchField) => {
+  const normalizedTerm = term.toLowerCase();
+  const description = author.description?.toLowerCase() ?? "";
+  const amazonPage = author.amazonPage?.toLowerCase() ?? "";
+  const name = author.name.toLowerCase();
 
-  return new Promise((resolve) =>
-    canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.9),
+  if (field === "name") return name.includes(normalizedTerm);
+  if (field === "description") return description.includes(normalizedTerm);
+
+  return (
+    name.includes(normalizedTerm) ||
+    description.includes(normalizedTerm) ||
+    amazonPage.includes(normalizedTerm)
   );
 };
 
-const fetchWikipediaPhoto = async (personName: string): Promise<Blob | null> => {
-  try {
-    const title = encodeURIComponent(personName.trim().replace(/ /g, "_"));
-    const req = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`,
-    );
-    if (!req.ok) return null;
-    const data = await req.json();
-    const url: string | undefined =
-      data.originalimage?.source || data.thumbnail?.source;
-    if (!url) return null;
-    const imgRes = await fetch(url);
-    if (!imgRes.ok) return null;
-    const blob = await imgRes.blob();
-    if (!blob.type.startsWith("image")) return null;
-    return blob;
-  } catch {
-    return null;
-  }
-};
-
-const extractUrl = (text: string): string | null => {
-  const match = text.match(/https?:\/\/[^\s]+/i);
-  return match ? match[0] : null;
-};
-
-/* -------------------------------------------------------------------------- */
-/*                                   component                                */
-/* -------------------------------------------------------------------------- */
-
-export default function AuthorsPage() {
-  const { authenticated, loading: authLoading, login } = useAuth();
-
-  /* ----------------------------- local state ----------------------------- */
-  const [password, setPassword] = useState("");
-  const [authors, setAuthors] = useState<Author[]>([]);
-  const [filteredAuthors, setFilteredAuthors] = useState<Author[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchField, setSearchField] = useState<"all" | "name" | "description">(
-    "all",
-  );
-  // Column definitions for DataTable (molecule level)
-  const columns: ColumnDef[] = [
-    { key: "name", label: "Name", width: 200, minWidth: 150 },
+const getStatusBadges = (author: Author) => {
+  const badges = [
     {
-      key: "profile",
-      label: "Profile Photo",
-      width: 120,
-      minWidth: 100,
-      sortAccessor: (row: Author) => (row.profile_url ? 1 : 0),
+      key: "photo",
+      label: author.profile_url ? "Photo ready" : "Missing photo",
+      className: author.profile_url
+        ? `${statusBadgeBaseClassName} border-emerald-200 bg-emerald-50 text-emerald-700`
+        : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
     },
     {
       key: "description",
-      label: "Description",
-      width: 360,
-      minWidth: 200,
-      sortAccessor: (row: Author) => row.description ?? "",
-    },
-    {
-      key: "amazonPage",
-      label: "Amazon Page",
-      width: 160,
-      minWidth: 120,
-      sortAccessor: (row: Author) => row.amazonPage ?? "",
+      label: author.description?.trim() ? "Bio ready" : "Missing bio",
+      className: author.description?.trim()
+        ? `${statusBadgeBaseClassName} border-sky-200 bg-sky-50 text-sky-700`
+        : `${statusBadgeBaseClassName} border-slate-200 bg-slate-100 text-slate-600`,
     },
   ];
 
-  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
-  const [bulkGenerating, setBulkGenerating] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const imageSource = inferImageSource(author);
+  if (imageSource) {
+    badges.push({
+      key: "source",
+      label: `Source: ${sourceLabelMap[imageSource]}`,
+      className: `${statusBadgeBaseClassName} border-violet-200 bg-violet-50 text-violet-700`,
+    });
+  }
 
-  /* ---------------------------- auth side‑effect ---------------------------- */
+  return badges;
+};
+
+const getSortValue = (author: Author, columnKey: string) => {
+  switch (columnKey) {
+    case "author":
+      return author.name.toLowerCase();
+    case "photo":
+      return author.profile_url ? 1 : 0;
+    case "description":
+      return (author.description ?? "").toLowerCase();
+    case "status":
+      return (
+        Number(Boolean(author.profile_url)) +
+        Number(Boolean(author.description?.trim()))
+      );
+    default:
+      return author.name.toLowerCase();
+  }
+};
+
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
+function DescriptionEditor({
+  row,
+  onRowChange,
+  onClose,
+}: RenderEditCellProps<Author>) {
+  const [value, setValue] = useState(row.description ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const finishedRef = useRef(false);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+    textareaRef.current?.select();
+  }, []);
+
+  const commit = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    onRowChange(
+      {
+        ...row,
+        description: value,
+      },
+      true,
+    );
+    onClose(true, false);
+  };
+
+  const cancel = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    onClose(false, false);
+  };
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancel();
+        }
+      }}
+      className="h-full w-full resize-none border-0 bg-white px-3 py-3 text-sm leading-6 text-slate-700 outline-none"
+    />
+  );
+}
+
+export default function AuthorsPage() {
+  const { authenticated, loading: authLoading, login } = useAuth();
+  const [password, setPassword] = useState("");
+  const [authors, setAuthors] = useState<Author[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchField, setSearchField] = useState<SearchField>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [findingPhotoIds, setFindingPhotoIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [bulkTask, setBulkTask] = useState<BulkTask>(null);
+  const [bulkProgress, setBulkProgress] = useState<BulkProgress | null>(null);
+  const [selectedAuthorId, setSelectedAuthorId] = useState<string | null>(null);
+  const [sortColumns, setSortColumns] = useState<readonly SortColumn[]>([
+    { columnKey: "author", direction: "ASC" },
+  ]);
+
   useEffect(() => {
     if (!authenticated) {
-      const adminPw = process.env
-        .NEXT_PUBLIC_ADMIN_PASSWORD as string | undefined;
-      if (adminPw) {
-        login(adminPw);
+      const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD as
+        | string
+        | undefined;
+      if (adminPassword) {
+        login(adminPassword);
       }
     }
   }, [authenticated, login]);
 
-  /* ---------------------------- data fetching ---------------------------- */
   const fetchAuthors = async () => {
     try {
       const snapshot = await getDocs(collection(db!, "quote_authors"));
-      const fetched = (await Promise.all(
-        snapshot.docs.map(async (docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        })),
-      )) as Author[];
+      const fetchedAuthors = snapshot.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        id: docSnap.id,
+      })) as Author[];
 
-      // Sort alphabetically by name
-      const sorted = fetched.sort((a, b) => a.name.localeCompare(b.name));
-      setAuthors(sorted);
-      setFilteredAuthors(sorted);
-    } catch (e) {
-      console.error("Error fetching authors", e);
+      fetchedAuthors.sort((left, right) => left.name.localeCompare(right.name));
+      setAuthors(fetchedAuthors);
+    } catch (error) {
+      console.error("Error fetching authors", error);
     } finally {
       setLoading(false);
     }
@@ -165,471 +235,754 @@ export default function AuthorsPage() {
     }
   }, [authenticated]);
 
-  /* ---------------------- bulk AI generation over dataset --------------------- */
-  const runBulkGeneration = async () => {
-    if (bulkGenerating) return;
-    try {
-      const candidates = authors.filter(
-        (a) => !a.description || !a.description.trim(),
-      );
-      const total = candidates.length;
-      if (!total) {
-        toast("All authors already have descriptions and photos.");
-        return;
-      }
+  const authorStats = useMemo(
+    () => ({
+      total: authors.length,
+      missingPhoto: authors.filter((author) => !author.profile_url).length,
+      missingDescription: authors.filter(
+        (author) => !author.description?.trim(),
+      ).length,
+    }),
+    [authors],
+  );
 
-      console.log(`[BULK] Starting bulk generation for ${total} authors (description only)`);
-      setBulkGenerating(true);
-      setBulkProgress({ done: 0, total });
+  const filteredAuthors = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
 
-      const queue = [...candidates];
-      let processed = 0;
-
-      const CONCURRENCY = 4;
-
-      const worker = async (workerId: number) => {
-        while (queue.length) {
-          const next = queue.pop();
-          if (!next) break;
-          try {
-            // Re-fetch the latest doc to ensure it still needs generation
-            const snap = await getDoc(doc(db!, "quote_authors", next.id));
-            const fresh = snap.exists() ? ({ id: next.id, ...snap.data() } as any as Author) : next;
-            if (fresh.description && fresh.description.trim()) {
-              console.log(`[THREAD ${workerId}] Skip (already has description): ${fresh.name}`);
-            } else {
-              console.log(`[THREAD ${workerId}] Generating for: ${fresh.name}`);
-              await handleGenerate(fresh);
-              console.log(`[THREAD ${workerId}] ✓ Completed ${fresh.name}`);
-            }
-          } catch (e) {
-            console.error(`[THREAD ${workerId}] ✗ Error processing ${next.name}:`, e);
-          } finally {
-            processed += 1;
-            setBulkProgress({ done: processed, total });
-          }
-        }
-      };
-
-      await Promise.all(Array.from({ length: CONCURRENCY }, (_, idx) => worker(idx + 1)));
-      console.log(`[BULK] Bulk description generation finished.`);
-      toast.success("Bulk AI generation complete!");
-    } finally {
-      setBulkGenerating(false);
-      setBulkProgress(null);
-    }
-  };
-
-  /* ----------------------------- event handlers ----------------------------- */
-
-  const handleSearch = (term: string, field: typeof searchField) => {
-    const trimmedTerm = term.toLowerCase().trim();
-    if (!trimmedTerm) {
-      setFilteredAuthors(authors);
-      return;
-    }
-    const filtered = authors.filter((author) => {
-      if (field === "all") {
-        return (
-          author.name.toLowerCase().includes(trimmedTerm) ||
-          (author.description?.toLowerCase().includes(trimmedTerm) ?? false)
-        );
-      } else if (field === "name") {
-        return author.name.toLowerCase().includes(trimmedTerm);
-      } else if (field === "description") {
-        return author.description?.toLowerCase().includes(trimmedTerm) ?? false;
-      }
-      return false;
+    return authors.filter((author) => {
+      if (statusFilter === "missingPhoto" && author.profile_url) return false;
+      if (statusFilter === "missingDescription" && author.description?.trim())
+        return false;
+      if (!normalizedTerm) return true;
+      return searchMatches(author, normalizedTerm, searchField);
     });
-    setFilteredAuthors(filtered);
-  };
+  }, [authors, searchField, searchTerm, statusFilter]);
+
+  const sortedAuthors = useMemo(() => {
+    if (!sortColumns.length) return filteredAuthors;
+
+    return [...filteredAuthors].sort((left, right) => {
+      for (const sortColumn of sortColumns) {
+        const leftValue = getSortValue(left, sortColumn.columnKey);
+        const rightValue = getSortValue(right, sortColumn.columnKey);
+
+        let comparison = 0;
+        if (typeof leftValue === "number" && typeof rightValue === "number") {
+          comparison = leftValue - rightValue;
+        } else {
+          comparison = String(leftValue).localeCompare(
+            String(rightValue),
+            undefined,
+            {
+              sensitivity: "base",
+            },
+          );
+        }
+
+        if (comparison !== 0) {
+          return sortColumn.direction === "DESC" ? comparison * -1 : comparison;
+        }
+      }
+
+      return 0;
+    });
+  }, [filteredAuthors, sortColumns]);
+
+  const selectedAuthor = useMemo(
+    () => authors.find((author) => author.id === selectedAuthorId) ?? null,
+    [authors, selectedAuthorId],
+  );
 
   const handleLogin = () => {
     if (login(password)) {
       setLoading(true);
       fetchAuthors();
-    } else {
-      toast.error("Incorrect password. Please try again.");
+      return;
     }
+
+    toast.error("Incorrect password. Please try again.");
   };
 
-  const handleSave = async (updated: Author) => {
-    const ref = doc(db!, "quote_authors", updated.id);
-    let profileUrl = updated.profile_url ?? "";
-    const prevUrl = updated.profile_url;
-
-    // If user pasted an external URL, try to cache it to Storage so we own the asset
-    if (profileUrl && !profileUrl.includes("firebasestorage.googleapis.com")) {
-      try {
-        const res = await fetch(profileUrl, { mode: "cors" }); // allow reading pixels when CORS enabled
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const raw = await res.blob();
-        if (raw.type.startsWith("image")) {
-          const blob = await squareImageBlob(raw);
-          const ext = (blob.type.split("/")[1] || "jpg").split(";")[0];
-          const cleanName = updated.name
-            .replace(/[^a-z0-9]/gi, "_")
-            .toLowerCase();
-          const photoRef = storageRef(
-            storage!,
-            `author_photos/${cleanName}.${ext}`,
-          );
-          await uploadBytes(photoRef, blob, { contentType: blob.type });
-          profileUrl = await getDownloadURL(photoRef);
-        }
-      } catch (e) {
-        console.warn("Failed to cache manual profile URL", e);
-        // Keep the external URL for now; the nightly job / ensureAuthorProfile can attempt again later.
-      }
-    }
-
-    // Delete previous photo from Storage if url changed or removed
-    if (prevUrl && prevUrl !== profileUrl && prevUrl.includes('firebasestorage.googleapis.com')) {
-      try {
-        const pathMatch = prevUrl.match(/o\/([^?]+)/);
-        if (pathMatch) {
-          const decoded = decodeURIComponent(pathMatch[1]);
-          await deleteObject(storageRef(storage!, decoded));
-        }
-      } catch {}
-    }
-
-    const data: any = {
-      name: updated.name,
-      updatedAt: new Date().toISOString(),
-    };
-    if (profileUrl) data.profile_url = profileUrl; else data.profile_url = "";
-    // Only update description if non-empty
-    if (typeof updated.description === "string" && updated.description.trim()) {
-      data.description = updated.description.trim();
-    }
-    if (typeof updated.amazonPage === "string" && updated.amazonPage.trim()) {
-      data.amazonPage = updated.amazonPage.trim();
-    }
-    
-
-        const loadingId = toast.loading("Saving author…");
-    await updateDoc(ref, data);
-    await fetchAuthors();
-    toast.success("Author updated", { id: loadingId });
+  const loadQuotesForAuthor = async (authorName: string) => {
+    const snapshot = await getDocs(
+      query(collection(db!, "quotes"), where("author", "==", authorName)),
+    );
+    return snapshot.docs
+      .map((document) => document.data().quoteText as string | undefined)
+      .filter(Boolean) as string[];
   };
 
-  /* ----------------------- AI: generate missing fields ---------------------- */
+  const handleAutoFetchImage = async (
+    authorName: string,
+  ): Promise<ResolvedAuthorImage | null> =>
+    resolveAuthorImageCandidate({
+      authorName,
+      apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+    });
 
-  const handleGenerate = async (author: Author) => {
+  const handleSave = async ({
+    author,
+    imageFile,
+    remoteImageUrl,
+    imageSource,
+    removeImage,
+  }: AuthorEditorSavePayload) => {
+    const existingAuthor = authors.find(
+      (candidate) => candidate.id === author.id,
+    );
+    const previousProfileUrl = existingAuthor?.profile_url ?? "";
+    let nextProfileUrl = previousProfileUrl;
+    let nextImageSource = existingAuthor?.imageSource;
+    let nextImageOriginalUrl = existingAuthor?.imageOriginalUrl;
+
+    const loadingId = toast.loading("Saving author...");
+
     try {
-      if (generatingIds.has(author.id)) return;
-      console.log("[GEN] Starting generation for", author.name);
-      setGeneratingIds(prev => new Set(prev).add(author.id));
-
-      let profileUrl = "";
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-      /* --------- 1) (optional) generate description in parallel ---------- */
-      let descriptionText = author.description || "";
-      let descriptionPromise: Promise<string | null> | null = null;
-
-      if (!descriptionText && apiKey) {
-        const pro = new ChatGoogleGenerativeAI({
-          apiKey,
-          model: "gemini-2.5-pro",
-          temperature: 0.4,
+      if (removeImage) {
+        nextProfileUrl = "";
+        nextImageSource = undefined;
+        nextImageOriginalUrl = undefined;
+      } else if (imageFile) {
+        nextProfileUrl = await uploadAuthorImageBlob({
+          authorName: author.name,
+          blob: imageFile,
         });
-
-        const quotesSnapshot = await getDocs(
-          query(collection(db!, "quotes"), where("author", "==", author.name)),
-        );
-        const quotes = quotesSnapshot.docs
-          .map((d) => d.data().quoteText)
-          .filter(Boolean);
-
-        const quotesText = quotes.length
-          ? `Here are some of their quotes:\n${quotes.join("\n")}`
-          : "";
-
-        const promptDesc = `Write exactly 5 sentences describing the author ${author.name}. ${quotesText}`.trim();
-
-        descriptionPromise = pro
-          .invoke(promptDesc)
-          .then((resp) => {
-            const text =
-              typeof resp === "string"
-                ? resp
-                : (resp as any).content || (resp as any).text || String(resp);
-            return text.replace(/\n/g, " ").trim();
-          })
-          .catch(() => null);
-      }
-
-      /* --------------------- 2) Wikipedia head‑shot --------------------- */
-      const wikiBlob = await fetchWikipediaPhoto(author.name);
-      if (wikiBlob) {
-        const ext = (wikiBlob.type.split("/")[1] || "jpg").split(";")[0];
-        const clean = author.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
-        const refStorage = storageRef(
-          storage!,
-          `author_photos/${clean}.${ext}`,
-        );
-
-        const square = await squareImageBlob(wikiBlob);
-        await uploadBytes(refStorage, square, { contentType: "image/jpeg" });
-        profileUrl = await getDownloadURL(refStorage);
-      }
-
-      /* -------- 3) Gemini "flash" discovery if the above failed --------- */
-      if (!profileUrl && apiKey) {
-        const flash = new ChatGoogleGenerativeAI({
-          apiKey,
-          model: "gemini-2.5-flash",
-          temperature: 0.2,
+        nextImageSource = "upload";
+        nextImageOriginalUrl = undefined;
+      } else if (remoteImageUrl) {
+        nextProfileUrl = await cacheAuthorImageFromUrl({
+          authorName: author.name,
+          imageUrl: remoteImageUrl,
         });
-
-        const MAX_TRIES = 3;
-        for (let i = 1; i <= MAX_TRIES && !profileUrl; i++) {
-          console.log(`[GEN] Gemini page attempt ${i}`);
-
-          const prompt =
-            `Provide ONLY one new URL (no markdown) to a web page that contains a clear portrait or headshot of ${author.name}. ` +
-            `Prefer official bio pages or reputable news outlets. Do not repeat a previous URL. If none found reply NONE.`;
-
-          const resp = await flash.invoke(prompt);
-          const text =
-            typeof resp === "string"
-              ? resp
-              : (resp as any).content || (resp as any).text || String(resp);
-
-          const pageUrl = extractUrl(text);
-          if (!pageUrl) continue;
-
-          const htmlRes = await fetch(
-            `/api/fetch-page?url=${encodeURIComponent(pageUrl)}`,
-          );
-          if (!htmlRes.ok) continue;
-          const { html } = await htmlRes.json();
-
-          const docHTML = new DOMParser().parseFromString(html, "text/html");
-
-          let imgSrc: string | null = null;
-          const og = docHTML.querySelector(
-            'meta[property="og:image" i]',
-          ) as HTMLMetaElement | null;
-          if (og?.content) imgSrc = og.content;
-
-          if (!imgSrc) {
-            const tw = docHTML.querySelector(
-              'meta[name="twitter:image" i]',
-            ) as HTMLMetaElement | null;
-            if (tw?.content) imgSrc = tw.content;
-          }
-
-          if (!imgSrc) {
-            const imgs = Array.from(docHTML.images) as HTMLImageElement[];
-            const lower = author.name.toLowerCase();
-            const cand = imgs.find(
-              (im) =>
-                im.alt.toLowerCase().includes(lower) ||
-                im.src.toLowerCase().includes(lower),
-            );
-            if (cand) imgSrc = cand.src;
-          }
-          if (!imgSrc) continue;
-
-          try {
-            const imgResp = await fetch(imgSrc, { mode: "no-cors" });
-            const rawBlob = await imgResp.blob();
-            if (!rawBlob.type.startsWith("image")) continue;
-
-            const blob = await squareImageBlob(rawBlob);
-            const ext = (blob.type.split("/")[1] || "jpg").split(";")[0];
-            const clean = author.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
-            const refStorage = storageRef(
-              storage!,
-              `author_photos/${clean}.${ext}`,
-            );
-            await uploadBytes(refStorage, blob, { contentType: blob.type });
-            profileUrl = await getDownloadURL(refStorage);
-          } catch {
-            continue;
-          }
-        }
+        nextImageSource = imageSource ?? "external_url";
+        nextImageOriginalUrl = remoteImageUrl;
       }
 
-      if (!profileUrl) {
-        console.warn("Unable to generate photo automatically.");
+      if (previousProfileUrl && previousProfileUrl !== nextProfileUrl) {
+        await deleteStoredAuthorImage(previousProfileUrl);
       }
 
-      /* ---------------------- await parallel description ---------------------- */
-      if (descriptionPromise) {
-        const txt = await descriptionPromise;
-        if (txt) descriptionText = txt;
+      const payload: Record<string, string | ReturnType<typeof deleteField>> = {
+        name: author.name.trim(),
+        profile_url: nextProfileUrl,
+        description: (author.description ?? "").trim(),
+        amazonPage: (author.amazonPage ?? "").trim(),
+        updatedAt: new Date().toISOString(),
+        imageSource:
+          nextProfileUrl &&
+          (nextImageSource ||
+            inferImageSource({
+              imageSource: nextImageSource,
+              imageOriginalUrl: nextImageOriginalUrl,
+              profile_url: nextProfileUrl,
+            }))
+            ? (nextImageSource ||
+                inferImageSource({
+                  imageSource: nextImageSource,
+                  imageOriginalUrl: nextImageOriginalUrl,
+                  profile_url: nextProfileUrl,
+                }))!
+            : deleteField(),
+        imageOriginalUrl:
+          nextProfileUrl && nextImageOriginalUrl
+            ? nextImageOriginalUrl
+            : deleteField(),
+      };
+
+      await updateDoc(doc(db!, "quote_authors", author.id), payload);
+      await fetchAuthors();
+      toast.success("Author updated", { id: loadingId });
+    } catch (error: unknown) {
+      console.error(error);
+      toast.error(getErrorMessage(error, "Failed to save author"), {
+        id: loadingId,
+      });
+      throw error;
+    }
+  };
+
+  const handleFindPhoto = async (author: Author) => {
+    if (findingPhotoIds.has(author.id)) return;
+
+    setFindingPhotoIds((current) => new Set(current).add(author.id));
+    const loadingId = toast.loading(`Finding a photo for ${author.name}...`);
+
+    try {
+      const resolvedImage = await handleAutoFetchImage(author.name);
+      if (!resolvedImage) {
+        throw new Error("No reliable photo was found");
       }
 
-      /* ---------------------- write back to Firestore ------------------------- */
+      const profileUrl = await cacheAuthorImageFromUrl({
+        authorName: author.name,
+        imageUrl: resolvedImage.originalUrl,
+      });
+
+      if (author.profile_url && author.profile_url !== profileUrl) {
+        await deleteStoredAuthorImage(author.profile_url);
+      }
+
       await updateDoc(doc(db!, "quote_authors", author.id), {
-        profile_url: profileUrl || author.profile_url || "",
-        description: descriptionText,
+        profile_url: profileUrl,
+        imageSource: resolvedImage.source,
+        imageOriginalUrl: resolvedImage.originalUrl,
         updatedAt: new Date().toISOString(),
       });
 
       await fetchAuthors();
-      setGeneratingIds(prev=>{const s=new Set(prev);s.delete(author.id);return s;});
-    } catch (e) {
-      console.error("Generate failed", e);
+      toast.success(`Updated ${author.name}`, { id: loadingId });
+    } catch (error: unknown) {
+      console.error(error);
+      toast.error(getErrorMessage(error, "Unable to update the photo"), {
+        id: loadingId,
+      });
     } finally {
-      setGeneratingIds(prev=>{const s=new Set(prev);s.delete(author.id);return s;});
+      setFindingPhotoIds((current) => {
+        const next = new Set(current);
+        next.delete(author.id);
+        return next;
+      });
     }
   };
 
+  const runBulkImages = async () => {
+    if (bulkTask) return;
 
+    const candidates = authors.filter((author) => !author.profile_url);
+    if (!candidates.length) {
+      toast("All authors already have photos.");
+      return;
+    }
 
-  /* -------------------------- keep search on refresh ------------------------- */
-  // Debounced search effect for responsiveness
-  useEffect(() => {
-    const id = setTimeout(() => {
-      handleSearch(searchTerm, searchField);
-    }, 200);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, searchField, authors]);
+    setBulkTask("images");
+    setBulkProgress({
+      done: 0,
+      total: candidates.length,
+      label: candidates[0].name,
+    });
 
-  /* ------------------------------------------------------------------------ */
-  /*                                 render                                   */
-  /* ------------------------------------------------------------------------ */
+    let updatedCount = 0;
+    try {
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        setBulkProgress({
+          done: index,
+          total: candidates.length,
+          label: candidate.name,
+        });
+
+        try {
+          const resolvedImage = await handleAutoFetchImage(candidate.name);
+          if (!resolvedImage) continue;
+
+          const profileUrl = await cacheAuthorImageFromUrl({
+            authorName: candidate.name,
+            imageUrl: resolvedImage.originalUrl,
+          });
+
+          await updateDoc(doc(db!, "quote_authors", candidate.id), {
+            profile_url: profileUrl,
+            imageSource: resolvedImage.source,
+            imageOriginalUrl: resolvedImage.originalUrl,
+            updatedAt: new Date().toISOString(),
+          });
+          updatedCount += 1;
+        } catch (error) {
+          console.warn("Bulk image fill failed", candidate.name, error);
+        } finally {
+          setBulkProgress({
+            done: index + 1,
+            total: candidates.length,
+            label: candidate.name,
+          });
+        }
+      }
+
+      await fetchAuthors();
+      toast.success(
+        `Filled ${updatedCount} missing photo${updatedCount === 1 ? "" : "s"}.`,
+      );
+    } finally {
+      setBulkTask(null);
+      setBulkProgress(null);
+    }
+  };
+
+  const runBulkDescriptions = async () => {
+    if (bulkTask) return;
+
+    const candidates = authors.filter((author) => !author.description?.trim());
+    if (!candidates.length) {
+      toast("All authors already have descriptions.");
+      return;
+    }
+
+    setBulkTask("descriptions");
+    setBulkProgress({
+      done: 0,
+      total: candidates.length,
+      label: candidates[0].name,
+    });
+
+    let updatedCount = 0;
+    try {
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        setBulkProgress({
+          done: index,
+          total: candidates.length,
+          label: candidate.name,
+        });
+
+        try {
+          const quotes = await loadQuotesForAuthor(candidate.name);
+          const description = await generateAuthorDescription({
+            authorName: candidate.name,
+            apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+            quotes,
+          });
+          if (!description) continue;
+
+          await updateDoc(doc(db!, "quote_authors", candidate.id), {
+            description,
+            updatedAt: new Date().toISOString(),
+          });
+          updatedCount += 1;
+        } catch (error) {
+          console.warn("Bulk description fill failed", candidate.name, error);
+        } finally {
+          setBulkProgress({
+            done: index + 1,
+            total: candidates.length,
+            label: candidate.name,
+          });
+        }
+      }
+
+      await fetchAuthors();
+      toast.success(
+        `Filled ${updatedCount} missing description${updatedCount === 1 ? "" : "s"}.`,
+      );
+    } finally {
+      setBulkTask(null);
+      setBulkProgress(null);
+    }
+  };
+
+  const handleInlineRowsChange = (
+    nextRows: Author[],
+    data: {
+      indexes: number[];
+      column: { key: string };
+    },
+  ) => {
+    if (data.column.key !== "description") return;
+
+    const rowIndex = data.indexes[0];
+    const changedRow = rowIndex >= 0 ? nextRows[rowIndex] : null;
+    const previousRow = rowIndex >= 0 ? sortedAuthors[rowIndex] : null;
+
+    if (!changedRow || !previousRow) return;
+
+    const nextDescription = changedRow.description?.trim() ?? "";
+    const previousDescription = previousRow.description?.trim() ?? "";
+
+    if (nextDescription === previousDescription) return;
+
+    const updatedAt = new Date().toISOString();
+    setAuthors((current) =>
+      current.map((author) =>
+        author.id === changedRow.id
+          ? {
+              ...author,
+              description: nextDescription,
+              updatedAt,
+            }
+          : author,
+      ),
+    );
+
+    const toastId = toast.loading(`Saving ${changedRow.name}...`);
+
+    void updateDoc(doc(db!, "quote_authors", changedRow.id), {
+      description: nextDescription,
+      updatedAt,
+    })
+      .then(() => {
+        toast.success(`Updated ${changedRow.name}`, { id: toastId });
+      })
+      .catch((error: unknown) => {
+        console.error(error);
+        setAuthors((current) =>
+          current.map((author) =>
+            author.id === previousRow.id
+              ? {
+                  ...author,
+                  description: previousRow.description,
+                  updatedAt: previousRow.updatedAt,
+                }
+              : author,
+          ),
+        );
+        toast.error(getErrorMessage(error, "Failed to update description"), {
+          id: toastId,
+        });
+      });
+  };
+
+  const filterButtons = [
+    { key: "all" as const, label: "All authors", count: authorStats.total },
+    {
+      key: "missingPhoto" as const,
+      label: "Missing photo",
+      count: authorStats.missingPhoto,
+    },
+    {
+      key: "missingDescription" as const,
+      label: "Missing description",
+      count: authorStats.missingDescription,
+    },
+  ];
+
+  const columns: Column<Author>[] = [
+    {
+      key: "author",
+      name: "Author",
+      width: 280,
+      minWidth: 250,
+      frozen: true,
+      sortable: true,
+      resizable: true,
+      cellClass: "author-grid-wrap-cell",
+      renderCell: ({ row }) => (
+        <div className="flex h-full flex-col justify-center gap-2 py-3">
+          <div className="dashboard-wrap-text text-base font-semibold text-slate-900">
+            {row.name}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>
+              {row.amazonPage
+                ? "Amazon page saved"
+                : "Metadata lives in Manage"}
+            </span>
+            {row.updatedAt ? (
+              <span>
+                Updated {new Date(row.updatedAt).toLocaleDateString()}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "photo",
+      name: "Photo",
+      width: 190,
+      minWidth: 170,
+      sortable: true,
+      resizable: true,
+      renderCell: ({ row }) => {
+        const imageSource = inferImageSource(row);
+
+        return (
+          <div className="flex h-full items-center py-3">
+            {row.profile_url ? (
+              <div className="flex items-center gap-3">
+                <div className="h-16 w-16 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-100">
+                  <img
+                    src={row.profile_url}
+                    alt={`${row.name} headshot`}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                <div className="space-y-1 text-xs text-slate-500">
+                  <div className="font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Ready
+                  </div>
+                  {imageSource ? (
+                    <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">
+                      {sourceLabelMap[imageSource]}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-16 w-full items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                No photo
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "description",
+      name: "Description",
+      minWidth: 360,
+      sortable: true,
+      resizable: true,
+      editable: true,
+      cellClass: "author-grid-wrap-cell",
+      renderEditCell: (props) => <DescriptionEditor {...props} />,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center py-3">
+          <div
+            className={`dashboard-wrap-text text-sm leading-6 ${
+              row.description?.trim()
+                ? "text-slate-600"
+                : "italic text-slate-400"
+            }`}
+            style={{
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 4,
+              overflow: "hidden",
+            }}
+          >
+            {row.description?.trim() ||
+              "Double-click to add a concise author bio."}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      name: "Status",
+      width: 260,
+      minWidth: 240,
+      sortable: true,
+      resizable: true,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center py-3">
+          <div className="flex flex-wrap gap-2">
+            {getStatusBadges(row).map((badge) => (
+              <span key={badge.key} className={badge.className}>
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      name: "Actions",
+      width: 190,
+      minWidth: 180,
+      resizable: true,
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center py-3">
+          <div className="flex w-full flex-col gap-2">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedAuthorId(row.id);
+              }}
+              className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              Manage
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleFindPhoto(row);
+              }}
+              disabled={findingPhotoIds.has(row.id)}
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {findingPhotoIds.has(row.id)
+                ? "Searching..."
+                : row.profile_url
+                  ? "Refresh Photo"
+                  : "Find Photo"}
+            </button>
+          </div>
+        </div>
+      ),
+    },
+  ];
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-primary">Loading...</p>
-        </div>
-      </div>
+      <CenteredStatus
+        message="Loading..."
+        className="flex min-h-screen items-center justify-center bg-neutral-light"
+      />
     );
   }
 
   if (!authenticated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-light">
-        <div className="bg-white p-6 rounded-md shadow">
-          <div className="flex items-center justify-center mb-4">
-            <Image
-              src="/images/image.png"
-              alt="Icon"
-              width={64}
-              height={64}
-              className="rounded-full"
-            />
-          </div>
-          <h2 className="text-xl font-bold mb-4 text-primary text-center">
-            Enter Password
-          </h2>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="input input-bordered w-full mb-4 text-black"
-          />
-          <button
-            onClick={handleLogin}
-            className="bg-primary text-white px-4 py-2 rounded shadow w-full"
-          >
-            Login
-          </button>
-        </div>
-      </div>
+      <PasswordGateCard
+        password={password}
+        onPasswordChange={setPassword}
+        onSubmit={handleLogin}
+      />
     );
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-neutral-light">
-        <SideNav />
-        <main className="flex-1 ml-64 p-8">
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
-              <p className="mt-4 text-primary">Loading authors...</p>
-            </div>
-          </div>
-        </main>
-      </div>
+      <DashboardPageShell contentClassName="h-full">
+        <CenteredStatus message="Loading authors..." />
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-neutral-light">
-      <SideNav />
-      <main className="flex-1 ml-64 p-8 overflow-x-hidden">
-        <div className="max-w-7xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
-          {/* --------------------------- search panel -------------------------- */}
-          <div className="flex-none">
-            <div className="flex flex-col sm:flex-row gap-4 mb-4 items-start sm:items-center">
-              <select
-                value={searchField}
-                onChange={(e) => {
-                  const field = e.target.value as typeof searchField;
-                  setSearchField(field);
-                  handleSearch(searchTerm, field);
-                }}
-                className="select select-bordered bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary w-full sm:w-auto"
-              >
-                <option value="all">All Fields</option>
-                <option value="name">Name</option>
-                <option value="description">Description</option>
-              </select>
+    <DashboardPageShell contentClassName="flex w-full min-w-0 flex-col gap-6">
+      <DashboardPageHeader
+        className="dashboard-page-header"
+        childrenClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+        eyebrow="Author Library"
+        title="Authors"
+        description="Keep portraits, bios, and supporting metadata clean without leaving the author table."
+        meta={`${filteredAuthors.length} of ${authors.length} authors shown`}
+        actions={
+          <>
+            <button
+              onClick={runBulkImages}
+              disabled={bulkTask !== null}
+              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Fill Missing Images
+            </button>
+            <button
+              onClick={runBulkDescriptions}
+              disabled={bulkTask !== null}
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Fill Missing Descriptions
+            </button>
+          </>
+        }
+      >
+        {filterButtons.map((filterButton) => {
+          return (
+            <DashboardFilterPill
+              key={filterButton.key}
+              label={filterButton.label}
+              count={filterButton.count}
+              active={statusFilter === filterButton.key}
+              tone={
+                filterButton.key === "missingPhoto"
+                  ? "amber"
+                  : filterButton.key === "missingDescription"
+                    ? "sky"
+                    : "neutral"
+              }
+              onClick={() => setStatusFilter(filterButton.key)}
+            />
+          );
+        })}
+      </DashboardPageHeader>
 
-              <div className="relative w-full sm:w-auto sm:flex-1">
-                <input
-                  type="text"
-                  placeholder="Search authors..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    const newTerm = e.target.value;
-                    setSearchTerm(newTerm);
-                  }}
-                  className="input input-bordered w-full pl-10 bg-white border-gray-300 text-black focus:border-primary focus:ring-2 focus:ring-primary"
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg
-                    className="h-5 w-5 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-
-
+      <DashboardSearchToolbar
+        selectValue={searchField}
+        onSelectChange={(value) => setSearchField(value as SearchField)}
+        selectOptions={[
+          { value: "all", label: "All fields" },
+          { value: "name", label: "Name" },
+          { value: "description", label: "Description" },
+        ]}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search authors, bios, or saved metadata..."
+        rightContent={
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm text-slate-500">
+              <span>
+                {bulkTask === "images"
+                  ? "Filling missing images"
+                  : bulkTask === "descriptions"
+                    ? "Filling missing descriptions"
+                    : "Bulk author status"}
+              </span>
+              <span>
+                {bulkProgress
+                  ? `${bulkProgress.done}/${bulkProgress.total}`
+                  : "Idle"}
+              </span>
             </div>
-          </div>
-
-          {/* ------------------------------- table ------------------------------ */}
-          <DataTable<Author>
-            columns={columns}
-            data={filteredAuthors}
-            rowKey={(a) => a.id}
-            heightClass="flex-1"
-            rowRenderer={(author, widths, _index) => (
-              <EditableAuthorRow
-                author={author as Author}
-                onSave={handleSave}
-                onGenerate={handleGenerate}
-                isGenerating={generatingIds.has(author.id)}
-                columnWidths={widths as any}
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all"
+                style={{
+                  width: bulkProgress
+                    ? `${(bulkProgress.done / Math.max(bulkProgress.total, 1)) * 100}%`
+                    : "0%",
+                }}
               />
-            )}
-          />
+            </div>
+            <p className="truncate text-xs text-slate-400">
+              {bulkProgress
+                ? `Current author: ${bulkProgress.label}`
+                : "Double-click a bio to edit inline. Use Manage for images and metadata."}
+            </p>
+          </div>
+        }
+      />
 
+      <section className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white/92 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Author table
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Standard grid layout, sticky column labels, and inline bio editing
+              without squeezing the table into a narrow container.
+            </p>
+          </div>
+          <div className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+            Sticky header
+          </div>
         </div>
-      </main>
-    </div>
+
+        <DataGrid
+          className="author-grid rdg-light"
+          style={{ width: "100%", height: "min(72vh, 860px)", border: "none" }}
+          columns={columns}
+          rows={sortedAuthors}
+          rowKeyGetter={(author) => author.id}
+          rowHeight={128}
+          headerRowHeight={56}
+          defaultColumnOptions={{ resizable: true, sortable: true }}
+          sortColumns={sortColumns}
+          onSortColumnsChange={(nextSortColumns) =>
+            setSortColumns(nextSortColumns.slice(-1))
+          }
+          onRowsChange={handleInlineRowsChange}
+          onCellDoubleClick={(args, event) => {
+            if (
+              args.column.key === "description" ||
+              args.column.key === "actions"
+            )
+              return;
+            event.preventGridDefault();
+            setSelectedAuthorId(args.row.id);
+          }}
+          renderers={{
+            noRowsFallback: (
+              <div className="flex h-full items-center justify-center px-6 py-20 text-center text-sm text-slate-500">
+                No authors match the current filters.
+              </div>
+            ),
+          }}
+        />
+      </section>
+
+      {selectedAuthor ? (
+        <AuthorEditorModal
+          author={selectedAuthor}
+          isOpen
+          onClose={() => setSelectedAuthorId(null)}
+          onSave={handleSave}
+          onAutoFetchImage={handleAutoFetchImage}
+        />
+      ) : null}
+    </DashboardPageShell>
   );
 }

@@ -55,6 +55,37 @@ jest.mock('./components/SideNav', () => ({
   default: () => <div data-testid="mock-sidenav">SideNav</div>,
 }));
 
+jest.mock('react-data-grid', () => ({
+  DataGrid: ({ columns, rows, renderers }: any) => (
+    <div role="grid">
+      <div role="row">
+        {columns.map((column: any) => (
+          <div key={column.key} role="columnheader">
+            {column.name}
+          </div>
+        ))}
+      </div>
+      <div>
+        {rows.length ? (
+          rows.map((row: any) => (
+            <div key={row.id} role="row">
+              {columns.map((column: any) => (
+                <div key={column.key} role="gridcell">
+                  {column.renderCell
+                    ? column.renderCell({ row, column })
+                    : row[column.key]}
+                </div>
+              ))}
+            </div>
+          ))
+        ) : (
+          <div>{renderers?.noRowsFallback ?? null}</div>
+        )}
+      </div>
+    </div>
+  ),
+}));
+
 import Home from './page';
 
 describe('Home CRUD operations', () => {
@@ -109,6 +140,8 @@ describe('Home CRUD operations', () => {
 
     // Click Edit then Save
     fireEvent.click(getByText('Edit'));
+    const authorInput = await screen.findByDisplayValue('Test Author');
+    fireEvent.change(authorInput, { target: { value: 'Updated Author' } });
     await act(async () => {
       fireEvent.click(getByText('Save'));
     });
