@@ -46,6 +46,15 @@ export const buildPageProxyUrl = (url: string) =>
 export const sanitizeAuthorFileName = (authorName: string) =>
   authorName.replace(/[^a-z0-9]/gi, "_").toLowerCase();
 
+const buildVersionedAuthorAssetPath = (
+  folder: string,
+  authorName: string,
+  extension: string,
+) => {
+  const version = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${folder}/${sanitizeAuthorFileName(authorName)}-${version}.${extension}`;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -205,7 +214,7 @@ export const uploadAuthorImageBlob = async ({
   const extension = (squareBlob.type.split("/")[1] || "jpg").split(";")[0];
   const imageRef = storageRef(
     storage,
-    `author_photos/${sanitizeAuthorFileName(authorName)}.${extension}`,
+    buildVersionedAuthorAssetPath("author_photos", authorName, extension),
   );
 
   await uploadBytes(imageRef, squareBlob, { contentType: squareBlob.type });
@@ -226,7 +235,11 @@ export const uploadOriginalAuthorImageBlob = async ({
   const extension = (blob.type.split("/")[1] || "jpg").split(";")[0];
   const imageRef = storageRef(
     storage,
-    `author_photo_sources/${sanitizeAuthorFileName(authorName)}.${extension}`,
+    buildVersionedAuthorAssetPath(
+      "author_photo_sources",
+      authorName,
+      extension,
+    ),
   );
 
   await uploadBytes(imageRef, blob, { contentType: blob.type });
