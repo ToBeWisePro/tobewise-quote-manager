@@ -7,7 +7,6 @@ interface DashboardPageHeaderProps {
   eyebrow?: string;
   title: string;
   description: string;
-  meta?: string;
   actions?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
@@ -18,7 +17,6 @@ export default function DashboardPageHeader({
   eyebrow,
   title,
   description,
-  meta,
   actions,
   children,
   className,
@@ -49,11 +47,6 @@ export default function DashboardPageHeader({
               {description}
             </p>
           </div>
-          {meta ? (
-            <div className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-[0_12px_24px_rgba(15,23,42,0.06)]">
-              {meta}
-            </div>
-          ) : null}
         </div>
 
         {actions ? (

@@ -6,15 +6,20 @@ import EditModal from "./EditModal";
 import { Author } from "../types/Author";
 import {
   AuthorImageSource,
+  AuthorImageCrop,
+  DEFAULT_AUTHOR_IMAGE_CROP,
   ResolvedAuthorImage,
   buildImageProxyUrl,
   inferImageSource,
+  normalizeAuthorImageCrop,
+  resolvePastedAuthorImage,
 } from "../lib/authorProfile";
 
 export interface AuthorEditorSavePayload {
   author: Author;
   imageFile: File | null;
   remoteImageUrl: string | null;
+  imageCrop: AuthorImageCrop;
   imageSource?: AuthorImageSource;
   removeImage: boolean;
 }
@@ -26,13 +31,6 @@ interface AuthorEditorModalProps {
   onSave: (payload: AuthorEditorSavePayload) => Promise<void> | void;
   onAutoFetchImage: (authorName: string) => Promise<ResolvedAuthorImage | null>;
 }
-
-const sourceLabelMap: Record<AuthorImageSource, string> = {
-  upload: "Uploaded",
-  external_url: "External URL",
-  wikipedia: "Wikipedia",
-  ai_discovery: "AI discovery",
-};
 
 const normalizeAuthorText = (value?: string) => value?.trim() ?? "";
 
@@ -49,6 +47,10 @@ export default function AuthorEditorModal({
   const [pastedImageUrl, setPastedImageUrl] = useState("");
   const [removeImage, setRemoveImage] = useState(false);
   const [autoFetching, setAutoFetching] = useState(false);
+  const [resolvingPastedUrl, setResolvingPastedUrl] = useState(false);
+  const [imageCrop, setImageCrop] = useState<AuthorImageCrop>(
+    normalizeAuthorImageCrop(author),
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -59,6 +61,8 @@ export default function AuthorEditorModal({
     setPastedImageUrl(author.imageOriginalUrl ?? "");
     setRemoveImage(false);
     setAutoFetching(false);
+    setResolvingPastedUrl(false);
+    setImageCrop(normalizeAuthorImageCrop(author));
   }, [author, isOpen]);
 
   const filePreviewUrl = useMemo(() => {
@@ -75,7 +79,11 @@ export default function AuthorEditorModal({
   const previewUrl = removeImage
     ? null
     : filePreviewUrl ||
-      (remoteImageUrl ? buildImageProxyUrl(remoteImageUrl) : draft.profile_url || null);
+      (remoteImageUrl
+        ? buildImageProxyUrl(remoteImageUrl)
+        : draft.imageOriginalUrl
+          ? buildImageProxyUrl(draft.imageOriginalUrl)
+          : draft.profile_url || null);
 
   const activeSource = removeImage
     ? null
@@ -86,26 +94,47 @@ export default function AuthorEditorModal({
         : inferImageSource(draft);
 
   const hasChanges = useMemo(() => {
-    const originalImageCandidates = [author.imageOriginalUrl, author.profile_url]
+    const originalImageCandidates = [
+      author.imageOriginalUrl,
+      author.profile_url,
+    ]
       .map((value) => value?.trim())
       .filter(Boolean) as string[];
     const remoteCandidate = remoteImageUrl?.trim() ?? "";
 
     const hasTextChanges =
       normalizeAuthorText(draft.name) !== normalizeAuthorText(author.name) ||
-      normalizeAuthorText(draft.description) !== normalizeAuthorText(author.description) ||
-      normalizeAuthorText(draft.amazonPage) !== normalizeAuthorText(author.amazonPage);
+      normalizeAuthorText(draft.description) !==
+        normalizeAuthorText(author.description) ||
+      normalizeAuthorText(draft.amazonPage) !==
+        normalizeAuthorText(author.amazonPage);
+
+    const originalCrop = normalizeAuthorImageCrop(author);
+    const hasCropChanges =
+      imageCrop.centerX !== originalCrop.centerX ||
+      imageCrop.centerY !== originalCrop.centerY ||
+      imageCrop.zoom !== originalCrop.zoom;
 
     const hasRemovalChange =
-      removeImage && Boolean(author.profile_url || author.imageOriginalUrl || author.imageSource);
+      removeImage &&
+      Boolean(
+        author.profile_url || author.imageOriginalUrl || author.imageSource,
+      );
 
     const hasUploadChange = file !== null;
 
     const hasRemoteImageChange =
-      Boolean(remoteCandidate) && !originalImageCandidates.includes(remoteCandidate);
+      Boolean(remoteCandidate) &&
+      !originalImageCandidates.includes(remoteCandidate);
 
-    return hasTextChanges || hasRemovalChange || hasUploadChange || hasRemoteImageChange;
-  }, [author, draft, file, remoteImageUrl, removeImage]);
+    return (
+      hasTextChanges ||
+      hasCropChanges ||
+      hasRemovalChange ||
+      hasUploadChange ||
+      hasRemoteImageChange
+    );
+  }, [author, draft, file, imageCrop, remoteImageUrl, removeImage]);
 
   const updateDraft = <K extends keyof Author>(key: K, value: Author[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -118,6 +147,7 @@ export default function AuthorEditorModal({
     setFile(nextFile);
     setRemoteImageUrl(null);
     setRemoveImage(false);
+    setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
     setDraft((current) => ({
       ...current,
       imageSource: "upload",
@@ -125,21 +155,48 @@ export default function AuthorEditorModal({
     }));
   };
 
-  const applyPastedImageUrl = () => {
+  const applyPastedImageUrl = async () => {
     const trimmed = pastedImageUrl.trim();
     if (!trimmed) {
       toast.error("Paste an image URL first");
       return;
     }
 
-    setRemoteImageUrl(trimmed);
-    setFile(null);
-    setRemoveImage(false);
-    setDraft((current) => ({
-      ...current,
-      imageSource: "external_url",
-      imageOriginalUrl: trimmed,
-    }));
+    setResolvingPastedUrl(true);
+
+    try {
+      const resolved = await resolvePastedAuthorImage({
+        authorName: draft.name.trim(),
+        candidateUrl: trimmed,
+      });
+
+      if (!resolved) {
+        toast.error("That URL did not resolve to a usable image");
+        return;
+      }
+
+      setRemoteImageUrl(resolved.originalUrl);
+      setPastedImageUrl(resolved.originalUrl);
+      setFile(null);
+      setRemoveImage(false);
+      setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
+      setDraft((current) => ({
+        ...current,
+        imageSource: resolved.source,
+        imageOriginalUrl: resolved.originalUrl,
+      }));
+
+      toast.success(
+        resolved.originalUrl === trimmed
+          ? "Image URL loaded into the preview"
+          : "Page URL resolved to an image",
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Unable to load an image from that URL");
+    } finally {
+      setResolvingPastedUrl(false);
+    }
   };
 
   const handleAutoFetch = async () => {
@@ -161,6 +218,7 @@ export default function AuthorEditorModal({
       setPastedImageUrl(resolved.originalUrl);
       setFile(null);
       setRemoveImage(false);
+      setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
       setDraft((current) => ({
         ...current,
         imageSource: resolved.source,
@@ -180,6 +238,7 @@ export default function AuthorEditorModal({
     setRemoteImageUrl(null);
     setFile(null);
     setPastedImageUrl("");
+    setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
     setDraft((current) => ({
       ...current,
       imageSource: undefined,
@@ -188,11 +247,23 @@ export default function AuthorEditorModal({
   };
 
   const handleSave = async () => {
+    const originalCrop = normalizeAuthorImageCrop(author);
+    const hasCropChanges =
+      imageCrop.centerX !== originalCrop.centerX ||
+      imageCrop.centerY !== originalCrop.centerY ||
+      imageCrop.zoom !== originalCrop.zoom;
+    const fallbackSourceUrl =
+      draft.imageOriginalUrl?.trim() || draft.profile_url?.trim() || null;
+
     await onSave({
       author: draft,
       imageFile: file,
-      remoteImageUrl: removeImage ? null : remoteImageUrl,
-      imageSource: removeImage ? undefined : activeSource ?? undefined,
+      remoteImageUrl: removeImage
+        ? null
+        : remoteImageUrl ||
+          (!file && hasCropChanges ? fallbackSourceUrl : null),
+      imageCrop,
+      imageSource: removeImage ? undefined : (activeSource ?? undefined),
       removeImage,
     });
   };
@@ -212,26 +283,33 @@ export default function AuthorEditorModal({
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
                 Media
               </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">Image</h3>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Image
+              </h3>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Preview the next author image before it is cached into Firebase Storage.
+                Preview the next author image before it is cached into Firebase
+                Storage.
               </p>
             </div>
-            {activeSource ? (
-              <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
-                {sourceLabelMap[activeSource]}
-              </span>
-            ) : null}
           </div>
 
           <div className="grid gap-5 md:grid-cols-[220px_1fr]">
             <div className="overflow-hidden rounded-[26px] border border-dashed border-slate-300 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
               {previewUrl ? (
-                <img
-                  src={previewUrl}
-                  alt={`${draft.name || "Author"} preview`}
-                  className="h-[220px] w-full object-cover"
-                />
+                <div className="relative h-[220px] overflow-hidden bg-slate-100">
+                  <img
+                    src={previewUrl}
+                    alt={`${draft.name || "Author"} preview`}
+                    className="h-full w-full object-cover transition-transform duration-150"
+                    style={{
+                      objectPosition: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
+                      transform: `scale(${imageCrop.zoom})`,
+                      transformOrigin: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
+                    }}
+                  />
+                  <div className="pointer-events-none absolute inset-4 rounded-[22px] border border-white/85 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]" />
+                  <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90" />
+                </div>
               ) : (
                 <div className="flex h-[220px] items-center justify-center bg-slate-100 px-6 text-center text-sm leading-6 text-slate-400">
                   No photo selected yet
@@ -285,15 +363,128 @@ export default function AuthorEditorModal({
                   <button
                     type="button"
                     onClick={applyPastedImageUrl}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700"
+                    disabled={resolvingPastedUrl}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Paste URL
+                    {resolvingPastedUrl ? "Checking..." : "Paste URL"}
                   </button>
                 </div>
                 <p className="dashboard-hint">
-                  Uploaded files and pasted URLs are cached to Storage when you save.
+                  Uploaded files and pasted URLs are cached to Storage when you
+                  save.
                 </p>
               </div>
+
+              {previewUrl ? (
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50/90 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="dashboard-label">Photo editor</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Reframe the square crop so faces stay centered.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP)}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    <div className="dashboard-field-group">
+                      <div className="flex items-center justify-between gap-3">
+                        <label
+                          htmlFor="crop-horizontal"
+                          className="dashboard-label"
+                        >
+                          Horizontal
+                        </label>
+                        <span className="font-mono text-xs text-slate-500">
+                          {Math.round(imageCrop.centerX)}%
+                        </span>
+                      </div>
+                      <input
+                        id="crop-horizontal"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={imageCrop.centerX}
+                        onChange={(event) =>
+                          setImageCrop((current) => ({
+                            ...current,
+                            centerX: Number(event.target.value),
+                          }))
+                        }
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="dashboard-field-group">
+                      <div className="flex items-center justify-between gap-3">
+                        <label
+                          htmlFor="crop-vertical"
+                          className="dashboard-label"
+                        >
+                          Vertical
+                        </label>
+                        <span className="font-mono text-xs text-slate-500">
+                          {Math.round(imageCrop.centerY)}%
+                        </span>
+                      </div>
+                      <input
+                        id="crop-vertical"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={imageCrop.centerY}
+                        onChange={(event) =>
+                          setImageCrop((current) => ({
+                            ...current,
+                            centerY: Number(event.target.value),
+                          }))
+                        }
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="dashboard-field-group">
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="crop-zoom" className="dashboard-label">
+                          Zoom
+                        </label>
+                        <span className="font-mono text-xs text-slate-500">
+                          {imageCrop.zoom.toFixed(2)}x
+                        </span>
+                      </div>
+                      <input
+                        id="crop-zoom"
+                        type="range"
+                        min="1"
+                        max="2.5"
+                        step="0.05"
+                        value={imageCrop.zoom}
+                        onChange={(event) =>
+                          setImageCrop((current) => ({
+                            ...current,
+                            zoom: Number(event.target.value),
+                          }))
+                        }
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    Crop changes are applied to the stored 512x512 image when
+                    you save.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
@@ -304,9 +495,12 @@ export default function AuthorEditorModal({
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
                 Profile
               </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">Identity</h3>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Identity
+              </h3>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Keep the author name and supporting metadata clean and consistent.
+                Keep the author name and supporting metadata clean and
+                consistent.
               </p>
             </div>
 
@@ -321,7 +515,10 @@ export default function AuthorEditorModal({
                 onChange={(event) => updateDraft("name", event.target.value)}
                 className="input input-bordered w-full text-slate-800"
               />
-              <p className="dashboard-hint">Use the public-facing author name exactly as it should appear in the library.</p>
+              <p className="dashboard-hint">
+                Use the public-facing author name exactly as it should appear in
+                the library.
+              </p>
             </div>
 
             <div className="dashboard-field-group">
@@ -332,15 +529,22 @@ export default function AuthorEditorModal({
                 id="amazon-page"
                 type="url"
                 value={draft.amazonPage ?? ""}
-                onChange={(event) => updateDraft("amazonPage", event.target.value)}
+                onChange={(event) =>
+                  updateDraft("amazonPage", event.target.value)
+                }
                 placeholder="https://amazon.com/..."
                 className="input input-bordered w-full text-slate-800"
               />
-              <p className="dashboard-hint">Optional metadata. This stays out of the main table but remains editable here.</p>
+              <p className="dashboard-hint">
+                Optional metadata. This stays out of the main table but remains
+                editable here.
+              </p>
             </div>
 
             <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-              {draft.updatedAt ? `Last updated ${new Date(draft.updatedAt).toLocaleString()}` : "Not saved yet"}
+              {draft.updatedAt
+                ? `Last updated ${new Date(draft.updatedAt).toLocaleString()}`
+                : "Not saved yet"}
             </div>
           </section>
 
@@ -349,19 +553,27 @@ export default function AuthorEditorModal({
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
                 Writing
               </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">Description</h3>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Description
+              </h3>
               <p className="mt-1 text-sm leading-6 text-slate-500">
-                Maintain a concise author bio. You can save an empty field if you want it cleared.
+                Maintain a concise author bio. You can save an empty field if
+                you want it cleared.
               </p>
             </div>
             <div className="dashboard-field-group">
               <label className="dashboard-label">Short bio</label>
               <textarea
                 value={draft.description ?? ""}
-                onChange={(event) => updateDraft("description", event.target.value)}
+                onChange={(event) =>
+                  updateDraft("description", event.target.value)
+                }
                 className="textarea textarea-bordered min-h-[220px] w-full text-slate-800"
               />
-              <p className="dashboard-hint">Aim for a clean, compact summary that works well in the dashboard and the published experience.</p>
+              <p className="dashboard-hint">
+                Aim for a clean, compact summary that works well in the
+                dashboard and the published experience.
+              </p>
             </div>
           </section>
         </div>

@@ -24,11 +24,48 @@ export interface ResolvedAuthorImage {
   previewUrl: string;
 }
 
+export interface AuthorImageCrop {
+  centerX: number;
+  centerY: number;
+  zoom: number;
+}
+
+export const DEFAULT_AUTHOR_IMAGE_CROP: AuthorImageCrop = {
+  centerX: 50,
+  // Start higher in the frame so new author images keep faces in view by default.
+  centerY: 25,
+  zoom: 1,
+};
+
 export const buildImageProxyUrl = (url: string) =>
   `/api/fetch-image?url=${encodeURIComponent(url)}`;
 
+export const buildPageProxyUrl = (url: string) =>
+  `/api/fetch-page?url=${encodeURIComponent(url)}`;
+
 export const sanitizeAuthorFileName = (authorName: string) =>
   authorName.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+export const normalizeAuthorImageCrop = (
+  author?: Partial<
+    Pick<Author, "imageCropX" | "imageCropY" | "imageCropZoom">
+  > | null,
+): AuthorImageCrop => ({
+  centerX: clamp(
+    author?.imageCropX ?? DEFAULT_AUTHOR_IMAGE_CROP.centerX,
+    0,
+    100,
+  ),
+  centerY: clamp(
+    author?.imageCropY ?? DEFAULT_AUTHOR_IMAGE_CROP.centerY,
+    0,
+    100,
+  ),
+  zoom: clamp(author?.imageCropZoom ?? DEFAULT_AUTHOR_IMAGE_CROP.zoom, 1, 2.5),
+});
 
 export const extractUrl = (text: string) => {
   const match = text.match(/https?:\/\/[^\s]+/i);
@@ -43,18 +80,22 @@ const toAbsoluteUrl = (candidate: string, pageUrl: string) => {
   }
 };
 
-const parseImageUrlFromHtml = (html: string, personName: string, pageUrl: string) => {
+const parseImageUrlFromHtml = (
+  html: string,
+  personName: string,
+  pageUrl: string,
+) => {
   const parsed = new DOMParser().parseFromString(html, "text/html");
-  const ogImage = parsed.querySelector('meta[property="og:image" i]') as
-    | HTMLMetaElement
-    | null;
+  const ogImage = parsed.querySelector(
+    'meta[property="og:image" i]',
+  ) as HTMLMetaElement | null;
   if (ogImage?.content) {
     return toAbsoluteUrl(ogImage.content, pageUrl);
   }
 
-  const twitterImage = parsed.querySelector('meta[name="twitter:image" i]') as
-    | HTMLMetaElement
-    | null;
+  const twitterImage = parsed.querySelector(
+    'meta[name="twitter:image" i]',
+  ) as HTMLMetaElement | null;
   if (twitterImage?.content) {
     return toAbsoluteUrl(twitterImage.content, pageUrl);
   }
@@ -70,11 +111,27 @@ const parseImageUrlFromHtml = (html: string, personName: string, pageUrl: string
   return matchingImage ? toAbsoluteUrl(matchingImage.src, pageUrl) : null;
 };
 
-export const squareImageBlob = async (blob: Blob): Promise<Blob> => {
+export const getStoredAssetPathFromUrl = (assetUrl?: string | null) => {
+  if (!assetUrl?.includes("firebasestorage.googleapis.com")) return null;
+
+  const pathMatch = assetUrl.match(/o\/([^?]+)/);
+  return pathMatch ? decodeURIComponent(pathMatch[1]) : null;
+};
+
+export const squareImageBlob = async (
+  blob: Blob,
+  crop: AuthorImageCrop = DEFAULT_AUTHOR_IMAGE_CROP,
+): Promise<Blob> => {
   if (typeof createImageBitmap === "undefined") return blob;
 
   const bitmap = await createImageBitmap(blob);
-  const size = Math.min(bitmap.width, bitmap.height);
+  const normalizedCrop = normalizeAuthorImageCrop({
+    imageCropX: crop.centerX,
+    imageCropY: crop.centerY,
+    imageCropZoom: crop.zoom,
+  });
+  const baseSize = Math.min(bitmap.width, bitmap.height);
+  const size = Math.max(1, Math.min(baseSize / normalizedCrop.zoom, baseSize));
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 512;
@@ -82,8 +139,10 @@ export const squareImageBlob = async (blob: Blob): Promise<Blob> => {
   const context = canvas.getContext("2d");
   if (!context) return blob;
 
-  const sx = (bitmap.width - size) / 2;
-  const sy = (bitmap.height - size) / 2;
+  const centerX = (normalizedCrop.centerX / 100) * bitmap.width;
+  const centerY = (normalizedCrop.centerY / 100) * bitmap.height;
+  const sx = clamp(centerX - size / 2, 0, Math.max(bitmap.width - size, 0));
+  const sy = clamp(centerY - size / 2, 0, Math.max(bitmap.height - size, 0));
   context.drawImage(bitmap, sx, sy, size, size, 0, 0, 512, 512);
 
   return new Promise((resolve) => {
@@ -132,15 +191,17 @@ export const fetchRemoteImageBlob = async (imageUrl: string) => {
 export const uploadAuthorImageBlob = async ({
   authorName,
   blob,
+  crop = DEFAULT_AUTHOR_IMAGE_CROP,
 }: {
   authorName: string;
   blob: Blob;
+  crop?: AuthorImageCrop;
 }) => {
   if (!storage) {
     throw new Error("Firebase Storage is not initialized");
   }
 
-  const squareBlob = await squareImageBlob(blob);
+  const squareBlob = await squareImageBlob(blob, crop);
   const extension = (squareBlob.type.split("/")[1] || "jpg").split(";")[0];
   const imageRef = storageRef(
     storage,
@@ -151,24 +212,47 @@ export const uploadAuthorImageBlob = async ({
   return getDownloadURL(imageRef);
 };
 
+export const uploadOriginalAuthorImageBlob = async ({
+  authorName,
+  blob,
+}: {
+  authorName: string;
+  blob: Blob;
+}) => {
+  if (!storage) {
+    throw new Error("Firebase Storage is not initialized");
+  }
+
+  const extension = (blob.type.split("/")[1] || "jpg").split(";")[0];
+  const imageRef = storageRef(
+    storage,
+    `author_photo_sources/${sanitizeAuthorFileName(authorName)}.${extension}`,
+  );
+
+  await uploadBytes(imageRef, blob, { contentType: blob.type });
+  return getDownloadURL(imageRef);
+};
+
 export const cacheAuthorImageFromUrl = async ({
   authorName,
   imageUrl,
+  crop = DEFAULT_AUTHOR_IMAGE_CROP,
 }: {
   authorName: string;
   imageUrl: string;
+  crop?: AuthorImageCrop;
 }) => {
   const blob = await fetchRemoteImageBlob(imageUrl);
-  return uploadAuthorImageBlob({ authorName, blob });
+  return uploadAuthorImageBlob({ authorName, blob, crop });
 };
 
 export const deleteStoredAuthorImage = async (profileUrl: string) => {
-  if (!storage || !profileUrl.includes("firebasestorage.googleapis.com")) return;
+  if (!storage) return;
 
   try {
-    const pathMatch = profileUrl.match(/o\/([^?]+)/);
-    if (!pathMatch) return;
-    await deleteObject(storageRef(storage, decodeURIComponent(pathMatch[1])));
+    const assetPath = getStoredAssetPathFromUrl(profileUrl);
+    if (!assetPath) return;
+    await deleteObject(storageRef(storage, assetPath));
   } catch (error) {
     console.warn("Failed to delete previous stored image", error);
   }
@@ -229,7 +313,9 @@ export const resolveAiDiscoveredImage = async ({
       const pageText =
         typeof response === "string"
           ? response
-          : (response as any).content || (response as any).text || String(response);
+          : (response as any).content ||
+            (response as any).text ||
+            String(response);
       const pageUrl = extractUrl(pageText);
       if (!pageUrl) continue;
 
@@ -269,6 +355,52 @@ export const resolveAuthorImageCandidate = async ({
   );
 };
 
+export const resolvePastedAuthorImage = async ({
+  authorName,
+  candidateUrl,
+}: {
+  authorName: string;
+  candidateUrl: string;
+}): Promise<ResolvedAuthorImage | null> => {
+  const trimmedUrl = candidateUrl.trim();
+  if (!trimmedUrl) return null;
+
+  try {
+    await fetchRemoteImageBlob(trimmedUrl);
+    return {
+      source: trimmedUrl.includes("wikipedia.org")
+        ? "wikipedia"
+        : "external_url",
+      originalUrl: trimmedUrl,
+      previewUrl: buildImageProxyUrl(trimmedUrl),
+    };
+  } catch {
+    // Fall through to page parsing for non-image URLs.
+  }
+
+  try {
+    const response = await fetch(buildPageProxyUrl(trimmedUrl), {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+
+    const { html } = (await response.json()) as { html: string };
+    const imageUrl = parseImageUrlFromHtml(html, authorName, trimmedUrl);
+    if (!imageUrl) return null;
+
+    await fetchRemoteImageBlob(imageUrl);
+
+    return {
+      source: imageUrl.includes("wikipedia.org") ? "wikipedia" : "external_url",
+      originalUrl: imageUrl,
+      previewUrl: buildImageProxyUrl(imageUrl),
+    };
+  } catch (error) {
+    console.warn("Pasted author image resolution failed", error);
+    return null;
+  }
+};
+
 export const generateAuthorDescription = async ({
   authorName,
   apiKey,
@@ -293,7 +425,9 @@ export const generateAuthorDescription = async ({
     const text =
       typeof response === "string"
         ? response
-        : (response as any).content || (response as any).text || String(response);
+        : (response as any).content ||
+          (response as any).text ||
+          String(response);
     return text.replace(/\n/g, " ").trim() || null;
   } catch (error) {
     console.warn("Description generation failed", error);

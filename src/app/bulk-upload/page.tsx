@@ -116,7 +116,6 @@ export default function BulkUploadPage() {
         eyebrow="Workflow"
         title="Bulk Upload"
         description="Bring in a batch of quotes, validate them first, then import them in one pass."
-        meta={`${quotes.length} existing quotes loaded for validation`}
       />
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">

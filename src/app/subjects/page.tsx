@@ -58,9 +58,9 @@ export default function SubjectExplorerPage() {
       const runCleanup = async () => {
         try {
           const snap = await getDocs(collection(db!, "quotes"));
-          const promises: Promise<any>[] = [];
+          const promises: Promise<void>[] = [];
           snap.docs.forEach((d) => {
-            const data = d.data() as { subjects?: any };
+            const data = d.data() as { subjects?: unknown };
             if (Array.isArray(data.subjects) && data.subjects.length === 1) {
               const first = data.subjects[0];
               if (typeof first === "string" && first.includes(",")) {
@@ -136,7 +136,6 @@ export default function SubjectExplorerPage() {
         eyebrow="Explorer"
         title="Subjects"
         description="A clean list of normalized subjects and how many quotes currently map to each one."
-        meta={`${filtered.length} subjects tracked`}
       />
 
       <SimpleCountTable

@@ -95,7 +95,6 @@ export default function AuthorExplorerPage() {
         eyebrow="Explorer"
         title="Author Counts"
         description="A quick rollup of quote volume by author name across the current library."
-        meta={`${authors.length} authors counted`}
       />
 
       <SimpleCountTable

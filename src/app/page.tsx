@@ -30,9 +30,6 @@ type QuoteStatusFilter =
   | "missingLinks"
   | "unknownAuthor";
 
-const statusBadgeBaseClassName =
-  "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
-
 const searchMatches = (quote: Quote, term: string, field: SearchField) => {
   const normalizedTerm = term.toLowerCase();
 
@@ -71,64 +68,9 @@ const getSortValue = (quote: Quote, columnKey: string) => {
       return (
         Number(Boolean(quote.authorLink)) + Number(Boolean(quote.videoLink))
       );
-    case "status":
-      return (
-        Number(Boolean(quote.subjects.length)) +
-        Number(Boolean(quote.authorLink)) +
-        Number(Boolean(quote.videoLink)) +
-        Number(
-          Boolean(
-            quote.author && !quote.author.toLowerCase().includes("unknown"),
-          ),
-        )
-      );
     default:
       return quote.quoteText.toLowerCase();
   }
-};
-
-const getQuoteStatusBadges = (quote: Quote) => {
-  const badges = [
-    {
-      key: "subjects",
-      label: quote.subjects.length
-        ? `${quote.subjects.length} subject${quote.subjects.length === 1 ? "" : "s"}`
-        : "Missing subjects",
-      className: quote.subjects.length
-        ? `${statusBadgeBaseClassName} border-sky-200 bg-sky-50 text-sky-700`
-        : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
-    },
-    {
-      key: "links",
-      label:
-        quote.authorLink && quote.videoLink ? "Links ready" : "Missing links",
-      className:
-        quote.authorLink && quote.videoLink
-          ? `${statusBadgeBaseClassName} border-emerald-200 bg-emerald-50 text-emerald-700`
-          : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
-    },
-    {
-      key: "author",
-      label:
-        quote.author && !quote.author.toLowerCase().includes("unknown")
-          ? "Author confirmed"
-          : "Unknown author",
-      className:
-        quote.author && !quote.author.toLowerCase().includes("unknown")
-          ? `${statusBadgeBaseClassName} border-violet-200 bg-violet-50 text-violet-700`
-          : `${statusBadgeBaseClassName} border-slate-200 bg-slate-100 text-slate-600`,
-    },
-  ];
-
-  if (quote.contributedBy?.trim()) {
-    badges.push({
-      key: "contributor",
-      label: `By ${quote.contributedBy.trim()}`,
-      className: `${statusBadgeBaseClassName} border-rose-200 bg-rose-50 text-rose-700`,
-    });
-  }
-
-  return badges;
 };
 
 export default function Home() {
@@ -494,25 +436,6 @@ export default function Home() {
       ),
     },
     {
-      key: "status",
-      name: "Status",
-      width: 260,
-      minWidth: 240,
-      sortable: true,
-      resizable: true,
-      renderCell: ({ row }) => (
-        <div className="flex h-full items-center overflow-hidden py-5">
-          <div className="flex flex-wrap gap-2">
-            {getQuoteStatusBadges(row).map((badge) => (
-              <span key={badge.key} className={badge.className}>
-                {badge.label}
-              </span>
-            ))}
-          </div>
-        </div>
-      ),
-    },
-    {
       key: "actions",
       name: "Actions",
       width: 180,
@@ -609,7 +532,6 @@ export default function Home() {
         eyebrow="Quote Library"
         title="Quotes"
         description="Search, scan, and edit quotes quickly without the table fighting you."
-        meta={`${filteredQuotes.length} of ${quotes.length} quotes shown`}
       >
         {filterButtons.map((filterButton) => (
           <DashboardFilterPill

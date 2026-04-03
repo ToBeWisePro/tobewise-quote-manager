@@ -32,9 +32,12 @@ import {
   cacheAuthorImageFromUrl,
   deleteStoredAuthorImage,
   generateAuthorDescription,
+  getStoredAssetPathFromUrl,
   inferImageSource,
+  normalizeAuthorImageCrop,
   resolveAuthorImageCandidate,
   uploadAuthorImageBlob,
+  uploadOriginalAuthorImageBlob,
   type ResolvedAuthorImage,
 } from "../lib/authorProfile";
 import { Author } from "../types/Author";
@@ -48,16 +51,6 @@ interface BulkProgress {
   total: number;
   label: string;
 }
-
-const statusBadgeBaseClassName =
-  "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
-
-const sourceLabelMap: Record<NonNullable<Author["imageSource"]>, string> = {
-  upload: "Upload",
-  external_url: "External URL",
-  wikipedia: "Wikipedia",
-  ai_discovery: "AI discovery",
-};
 
 const searchMatches = (author: Author, term: string, field: SearchField) => {
   const normalizedTerm = term.toLowerCase();
@@ -75,36 +68,6 @@ const searchMatches = (author: Author, term: string, field: SearchField) => {
   );
 };
 
-const getStatusBadges = (author: Author) => {
-  const badges = [
-    {
-      key: "photo",
-      label: author.profile_url ? "Photo ready" : "Missing photo",
-      className: author.profile_url
-        ? `${statusBadgeBaseClassName} border-emerald-200 bg-emerald-50 text-emerald-700`
-        : `${statusBadgeBaseClassName} border-amber-200 bg-amber-50 text-amber-700`,
-    },
-    {
-      key: "description",
-      label: author.description?.trim() ? "Bio ready" : "Missing bio",
-      className: author.description?.trim()
-        ? `${statusBadgeBaseClassName} border-sky-200 bg-sky-50 text-sky-700`
-        : `${statusBadgeBaseClassName} border-slate-200 bg-slate-100 text-slate-600`,
-    },
-  ];
-
-  const imageSource = inferImageSource(author);
-  if (imageSource) {
-    badges.push({
-      key: "source",
-      label: `Source: ${sourceLabelMap[imageSource]}`,
-      className: `${statusBadgeBaseClassName} border-violet-200 bg-violet-50 text-violet-700`,
-    });
-  }
-
-  return badges;
-};
-
 const getSortValue = (author: Author, columnKey: string) => {
   switch (columnKey) {
     case "author":
@@ -113,11 +76,6 @@ const getSortValue = (author: Author, columnKey: string) => {
       return author.profile_url ? 1 : 0;
     case "description":
       return (author.description ?? "").toLowerCase();
-    case "status":
-      return (
-        Number(Boolean(author.profile_url)) +
-        Number(Boolean(author.description?.trim()))
-      );
     default:
       return author.name.toLowerCase();
   }
@@ -324,6 +282,7 @@ export default function AuthorsPage() {
     author,
     imageFile,
     remoteImageUrl,
+    imageCrop,
     imageSource,
     removeImage,
   }: AuthorEditorSavePayload) => {
@@ -331,9 +290,22 @@ export default function AuthorsPage() {
       (candidate) => candidate.id === author.id,
     );
     const previousProfileUrl = existingAuthor?.profile_url ?? "";
+    const previousOriginalUrl = existingAuthor?.imageOriginalUrl ?? "";
+    const previousProfilePath = getStoredAssetPathFromUrl(previousProfileUrl);
+    const previousOriginalPath = getStoredAssetPathFromUrl(previousOriginalUrl);
     let nextProfileUrl = previousProfileUrl;
     let nextImageSource = existingAuthor?.imageSource;
     let nextImageOriginalUrl = existingAuthor?.imageOriginalUrl;
+    const normalizedCrop = normalizeAuthorImageCrop({
+      imageCropX: imageCrop.centerX,
+      imageCropY: imageCrop.centerY,
+      imageCropZoom: imageCrop.zoom,
+    });
+    const previousCrop = normalizeAuthorImageCrop(existingAuthor ?? null);
+    const hasCropChanges =
+      normalizedCrop.centerX !== previousCrop.centerX ||
+      normalizedCrop.centerY !== previousCrop.centerY ||
+      normalizedCrop.zoom !== previousCrop.zoom;
 
     const loadingId = toast.loading("Saving author...");
 
@@ -343,31 +315,54 @@ export default function AuthorsPage() {
         nextImageSource = undefined;
         nextImageOriginalUrl = undefined;
       } else if (imageFile) {
-        nextProfileUrl = await uploadAuthorImageBlob({
+        nextImageOriginalUrl = await uploadOriginalAuthorImageBlob({
           authorName: author.name,
           blob: imageFile,
         });
+        nextProfileUrl = await uploadAuthorImageBlob({
+          authorName: author.name,
+          blob: imageFile,
+          crop: normalizedCrop,
+        });
         nextImageSource = "upload";
-        nextImageOriginalUrl = undefined;
       } else if (remoteImageUrl) {
         nextProfileUrl = await cacheAuthorImageFromUrl({
           authorName: author.name,
           imageUrl: remoteImageUrl,
+          crop: normalizedCrop,
         });
         nextImageSource = imageSource ?? "external_url";
         nextImageOriginalUrl = remoteImageUrl;
+      } else if (hasCropChanges && previousProfileUrl) {
+        nextProfileUrl = await cacheAuthorImageFromUrl({
+          authorName: author.name,
+          imageUrl: previousOriginalUrl || previousProfileUrl,
+          crop: normalizedCrop,
+        });
       }
 
-      if (previousProfileUrl && previousProfileUrl !== nextProfileUrl) {
+      const nextProfilePath = getStoredAssetPathFromUrl(nextProfileUrl);
+      const nextOriginalPath = getStoredAssetPathFromUrl(nextImageOriginalUrl);
+
+      if (previousProfilePath && previousProfilePath !== nextProfilePath) {
         await deleteStoredAuthorImage(previousProfileUrl);
       }
+      if (previousOriginalPath && previousOriginalPath !== nextOriginalPath) {
+        await deleteStoredAuthorImage(previousOriginalUrl);
+      }
 
-      const payload: Record<string, string | ReturnType<typeof deleteField>> = {
+      const payload: Record<
+        string,
+        string | number | ReturnType<typeof deleteField>
+      > = {
         name: author.name.trim(),
         profile_url: nextProfileUrl,
         description: (author.description ?? "").trim(),
         amazonPage: (author.amazonPage ?? "").trim(),
         updatedAt: new Date().toISOString(),
+        imageCropX: nextProfileUrl ? normalizedCrop.centerX : deleteField(),
+        imageCropY: nextProfileUrl ? normalizedCrop.centerY : deleteField(),
+        imageCropZoom: nextProfileUrl ? normalizedCrop.zoom : deleteField(),
         imageSource:
           nextProfileUrl &&
           (nextImageSource ||
@@ -417,8 +412,10 @@ export default function AuthorsPage() {
         authorName: author.name,
         imageUrl: resolvedImage.originalUrl,
       });
+      const previousProfilePath = getStoredAssetPathFromUrl(author.profile_url);
+      const nextProfilePath = getStoredAssetPathFromUrl(profileUrl);
 
-      if (author.profile_url && author.profile_url !== profileUrl) {
+      if (author.profile_url && previousProfilePath !== nextProfilePath) {
         await deleteStoredAuthorImage(author.profile_url);
       }
 
@@ -681,39 +678,23 @@ export default function AuthorsPage() {
       minWidth: 170,
       sortable: true,
       resizable: true,
-      renderCell: ({ row }) => {
-        const imageSource = inferImageSource(row);
-
-        return (
-          <div className="flex h-full items-center py-3">
-            {row.profile_url ? (
-              <div className="flex items-center gap-3">
-                <div className="h-16 w-16 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-100">
-                  <img
-                    src={row.profile_url}
-                    alt={`${row.name} headshot`}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <div className="space-y-1 text-xs text-slate-500">
-                  <div className="font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Ready
-                  </div>
-                  {imageSource ? (
-                    <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">
-                      {sourceLabelMap[imageSource]}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-16 w-full items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                No photo
-              </div>
-            )}
-          </div>
-        );
-      },
+      renderCell: ({ row }) => (
+        <div className="flex h-full items-center py-3">
+          {row.profile_url ? (
+            <div className="h-16 w-16 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-100">
+              <img
+                src={row.profile_url}
+                alt={`${row.name} headshot`}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="flex h-16 w-full items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              No photo
+            </div>
+          )}
+        </div>
+      ),
     },
     {
       key: "description",
@@ -741,25 +722,6 @@ export default function AuthorsPage() {
           >
             {row.description?.trim() ||
               "Double-click to add a concise author bio."}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "status",
-      name: "Status",
-      width: 260,
-      minWidth: 240,
-      sortable: true,
-      resizable: true,
-      renderCell: ({ row }) => (
-        <div className="flex h-full items-center py-3">
-          <div className="flex flex-wrap gap-2">
-            {getStatusBadges(row).map((badge) => (
-              <span key={badge.key} className={badge.className}>
-                {badge.label}
-              </span>
-            ))}
           </div>
         </div>
       ),
@@ -839,7 +801,6 @@ export default function AuthorsPage() {
         eyebrow="Author Library"
         title="Authors"
         description="Keep portraits, bios, and supporting metadata clean without leaving the author table."
-        meta={`${filteredAuthors.length} of ${authors.length} authors shown`}
         actions={
           <>
             <button
@@ -932,12 +893,9 @@ export default function AuthorsPage() {
               Author table
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Standard grid layout, sticky column labels, and inline bio editing
-              without squeezing the table into a narrow container.
+              Standard grid layout with inline bio editing and room to scan the
+              table comfortably.
             </p>
-          </div>
-          <div className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
-            Sticky header
           </div>
         </div>
 
