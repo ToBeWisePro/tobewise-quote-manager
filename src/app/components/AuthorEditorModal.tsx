@@ -1,16 +1,29 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+/* eslint-disable @next/next/no-img-element */
+
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import toast from "react-hot-toast";
 import EditModal from "./EditModal";
 import { Author } from "../types/Author";
 import {
-  AuthorImageSource,
-  AuthorImageCrop,
+  type AuthorImageSource,
+  type AuthorImageCrop,
+  type AuthorImageDimensions,
   DEFAULT_AUTHOR_IMAGE_CROP,
-  ResolvedAuthorImage,
   buildImageProxyUrl,
+  getAuthorImageCropWindow,
   inferImageSource,
+  moveAuthorImageCrop,
   normalizeAuthorImageCrop,
   resolvePastedAuthorImage,
 } from "../lib/authorProfile";
@@ -29,29 +42,44 @@ interface AuthorEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (payload: AuthorEditorSavePayload) => Promise<void> | void;
-  onAutoFetchImage: (authorName: string) => Promise<ResolvedAuthorImage | null>;
 }
 
 const normalizeAuthorText = (value?: string) => value?.trim() ?? "";
+const CROP_FRAME_FALLBACK_SIZE = 280;
+
+interface CropDragState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startCrop: AuthorImageCrop;
+  dimensions: AuthorImageDimensions;
+  frameSize: number;
+}
 
 export default function AuthorEditorModal({
   author,
   isOpen,
   onClose,
   onSave,
-  onAutoFetchImage,
 }: AuthorEditorModalProps) {
   const [draft, setDraft] = useState<Author>(author);
   const [file, setFile] = useState<File | null>(null);
   const [remoteImageUrl, setRemoteImageUrl] = useState<string | null>(null);
   const [pastedImageUrl, setPastedImageUrl] = useState("");
   const [removeImage, setRemoveImage] = useState(false);
-  const [autoFetching, setAutoFetching] = useState(false);
   const [resolvingPastedUrl, setResolvingPastedUrl] = useState(false);
   const [imageCrop, setImageCrop] = useState<AuthorImageCrop>(
     normalizeAuthorImageCrop(author),
   );
+  const [imageDimensions, setImageDimensions] =
+    useState<AuthorImageDimensions | null>(null);
+  const [cropFrameSize, setCropFrameSize] = useState(
+    CROP_FRAME_FALLBACK_SIZE,
+  );
+  const [isDraggingCrop, setIsDraggingCrop] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cropFrameRef = useRef<HTMLDivElement | null>(null);
+  const cropDragRef = useRef<CropDragState | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -60,9 +88,11 @@ export default function AuthorEditorModal({
     setRemoteImageUrl(null);
     setPastedImageUrl(author.imageOriginalUrl ?? "");
     setRemoveImage(false);
-    setAutoFetching(false);
     setResolvingPastedUrl(false);
     setImageCrop(normalizeAuthorImageCrop(author));
+    setImageDimensions(null);
+    setIsDraggingCrop(false);
+    cropDragRef.current = null;
   }, [author, isOpen]);
 
   const filePreviewUrl = useMemo(() => {
@@ -92,6 +122,50 @@ export default function AuthorEditorModal({
       : remoteImageUrl
         ? draft.imageSource || "external_url"
         : inferImageSource(draft);
+
+  useEffect(() => {
+    if (!previewUrl) return;
+
+    const frame = cropFrameRef.current;
+    if (!frame) return;
+
+    const updateFrameSize = () => {
+      const nextWidth = frame.getBoundingClientRect().width;
+      if (nextWidth > 0) setCropFrameSize(nextWidth);
+    };
+
+    updateFrameSize();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateFrameSize);
+    observer.observe(frame);
+
+    return () => observer.disconnect();
+  }, [previewUrl]);
+
+  const previewImageStyle = useMemo<CSSProperties>(() => {
+    if (!imageDimensions) {
+      return {
+        objectPosition: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
+        transform: `scale(${imageCrop.zoom})`,
+        transformOrigin: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
+      };
+    }
+
+    const { sx, sy, size } = getAuthorImageCropWindow(
+      imageDimensions,
+      imageCrop,
+    );
+    const displayScale = cropFrameSize / size;
+
+    return {
+      height: `${imageDimensions.height * displayScale}px`,
+      maxWidth: "none",
+      transform: `translate(${-sx * displayScale}px, ${-sy * displayScale}px)`,
+      width: `${imageDimensions.width * displayScale}px`,
+    };
+  }, [cropFrameSize, imageCrop, imageDimensions]);
 
   const hasChanges = useMemo(() => {
     const originalImageCandidates = [
@@ -145,6 +219,7 @@ export default function AuthorEditorModal({
     if (!nextFile) return;
 
     setFile(nextFile);
+    setImageDimensions(null);
     setRemoteImageUrl(null);
     setRemoveImage(false);
     setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
@@ -178,6 +253,7 @@ export default function AuthorEditorModal({
       setRemoteImageUrl(resolved.originalUrl);
       setPastedImageUrl(resolved.originalUrl);
       setFile(null);
+      setImageDimensions(null);
       setRemoveImage(false);
       setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
       setDraft((current) => ({
@@ -199,44 +275,11 @@ export default function AuthorEditorModal({
     }
   };
 
-  const handleAutoFetch = async () => {
-    const authorName = draft.name.trim();
-    if (!authorName) {
-      toast.error("Add an author name before fetching an image");
-      return;
-    }
-
-    setAutoFetching(true);
-    try {
-      const resolved = await onAutoFetchImage(authorName);
-      if (!resolved) {
-        toast.error("No reliable photo was found");
-        return;
-      }
-
-      setRemoteImageUrl(resolved.originalUrl);
-      setPastedImageUrl(resolved.originalUrl);
-      setFile(null);
-      setRemoveImage(false);
-      setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
-      setDraft((current) => ({
-        ...current,
-        imageSource: resolved.source,
-        imageOriginalUrl: resolved.originalUrl,
-      }));
-      toast.success("Photo candidate loaded into the preview");
-    } catch (error) {
-      console.error(error);
-      toast.error("Unable to fetch a photo right now");
-    } finally {
-      setAutoFetching(false);
-    }
-  };
-
   const handleRemoveImage = () => {
     setRemoveImage(true);
     setRemoteImageUrl(null);
     setFile(null);
+    setImageDimensions(null);
     setPastedImageUrl("");
     setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP);
     setDraft((current) => ({
@@ -268,242 +311,236 @@ export default function AuthorEditorModal({
     });
   };
 
+  const handlePreviewImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+    const { naturalHeight, naturalWidth } = event.currentTarget;
+    if (naturalWidth > 0 && naturalHeight > 0) {
+      setImageDimensions({ width: naturalWidth, height: naturalHeight });
+    }
+  };
+
+  const handleCropPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (!previewUrl || !imageDimensions) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const frameSize =
+      rect.width > 0 ? rect.width : cropFrameSize || CROP_FRAME_FALLBACK_SIZE;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setCropFrameSize(frameSize);
+    setIsDraggingCrop(true);
+    cropDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCrop: imageCrop,
+      dimensions: imageDimensions,
+      frameSize,
+    };
+  };
+
+  const handleCropPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const dragState = cropDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    setImageCrop(
+      moveAuthorImageCrop({
+        crop: dragState.startCrop,
+        dimensions: dragState.dimensions,
+        frameSize: dragState.frameSize,
+        deltaX: event.clientX - dragState.startX,
+        deltaY: event.clientY - dragState.startY,
+      }),
+    );
+  };
+
+  const finishCropDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const dragState = cropDragRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    cropDragRef.current = null;
+    setIsDraggingCrop(false);
+  };
+
   return (
     <EditModal
-      title={`Manage ${author.name}`}
+      title="Edit author"
       isOpen={isOpen}
       onClose={onClose}
       onSave={handleSave}
       saveDisabled={!hasChanges}
     >
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="space-y-5 rounded-[30px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.92)_0%,rgba(255,255,255,0.98)_100%)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
-                Media
-              </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                Image
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Preview the next author image before it is cached into Firebase
-                Storage.
-              </p>
+      <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <section className="space-y-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Profile photo
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-950">
+              {draft.name.trim() || "New author"}
+            </h3>
+          </div>
+
+          <div className="mx-auto w-full max-w-[260px]">
+            {previewUrl ? (
+              <div
+                ref={cropFrameRef}
+                aria-label="Photo position"
+                className={`relative aspect-square w-full touch-none overflow-hidden rounded-full bg-slate-100 shadow-inner ring-1 ring-slate-200 ${
+                  imageDimensions
+                    ? isDraggingCrop
+                      ? "cursor-grabbing"
+                      : "cursor-grab"
+                    : "cursor-default"
+                }`}
+                data-testid="author-photo-editor"
+                onPointerDown={handleCropPointerDown}
+                onPointerMove={handleCropPointerMove}
+                onPointerUp={finishCropDrag}
+                onPointerCancel={finishCropDrag}
+                onLostPointerCapture={finishCropDrag}
+              >
+                <img
+                  src={previewUrl}
+                  alt={`${draft.name || "Author"} preview`}
+                  className={
+                    imageDimensions
+                      ? `absolute left-0 top-0 select-none will-change-transform ${
+                          isDraggingCrop
+                            ? "transition-none"
+                            : "transition-transform duration-150"
+                        }`
+                      : "h-full w-full select-none object-cover transition-transform duration-150"
+                  }
+                  draggable={false}
+                  onLoad={handlePreviewImageLoad}
+                  style={previewImageStyle}
+                />
+                <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-black/10" />
+              </div>
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center rounded-full bg-slate-100 px-8 text-center text-sm leading-6 text-slate-400 ring-1 ring-slate-200">
+                No photo
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              {previewUrl ? "Replace photo" : "Upload photo"}
+            </button>
+            {previewUrl ? (
+              <button
+                type="button"
+                onClick={handleRemoveImage}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-red-300 hover:text-red-700"
+              >
+                Remove photo
+              </button>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
+          </div>
+
+          <div className="dashboard-field-group">
+            <label htmlFor="author-image-url" className="dashboard-label">
+              Image URL
+            </label>
+            <div className="grid gap-2">
+              <input
+                id="author-image-url"
+                type="url"
+                value={pastedImageUrl}
+                onChange={(event) => setPastedImageUrl(event.target.value)}
+                placeholder="https://example.com/headshot.jpg"
+                className="input input-bordered w-full text-slate-800"
+              />
+              <button
+                type="button"
+                onClick={applyPastedImageUrl}
+                disabled={resolvingPastedUrl}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {resolvingPastedUrl ? "Checking..." : "Use URL"}
+              </button>
             </div>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-[220px_1fr]">
-            <div className="overflow-hidden rounded-[26px] border border-dashed border-slate-300 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-              {previewUrl ? (
-                <div className="relative h-[220px] overflow-hidden bg-slate-100">
-                  <img
-                    src={previewUrl}
-                    alt={`${draft.name || "Author"} preview`}
-                    className="h-full w-full object-cover transition-transform duration-150"
-                    style={{
-                      objectPosition: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
-                      transform: `scale(${imageCrop.zoom})`,
-                      transformOrigin: `${imageCrop.centerX}% ${imageCrop.centerY}%`,
-                    }}
-                  />
-                  <div className="pointer-events-none absolute inset-4 rounded-[22px] border border-white/85 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]" />
-                  <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90" />
+          {previewUrl ? (
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="dashboard-label">Position</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Drag the photo to center it.
+                  </p>
                 </div>
-              ) : (
-                <div className="flex h-[220px] items-center justify-center bg-slate-100 px-6 text-center text-sm leading-6 text-slate-400">
-                  No photo selected yet
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                  onClick={() => setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-blue-300 hover:text-blue-700"
                 >
-                  {previewUrl ? "Replace" : "Upload"}
+                  Reset
                 </button>
-                <button
-                  type="button"
-                  onClick={handleAutoFetch}
-                  disabled={autoFetching}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {autoFetching ? "Searching..." : "Auto-fetch"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRemoveImage}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-red-200 hover:text-red-600"
-                >
-                  Remove
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileSelected}
-                />
               </div>
 
               <div className="dashboard-field-group">
-                <label className="dashboard-label">Paste image URL</label>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    type="url"
-                    value={pastedImageUrl}
-                    onChange={(event) => setPastedImageUrl(event.target.value)}
-                    placeholder="https://example.com/headshot.jpg"
-                    className="input input-bordered flex-1 text-slate-800"
-                  />
-                  <button
-                    type="button"
-                    onClick={applyPastedImageUrl}
-                    disabled={resolvingPastedUrl}
-                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {resolvingPastedUrl ? "Checking..." : "Paste URL"}
-                  </button>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="crop-zoom" className="dashboard-label">
+                    Zoom
+                  </label>
+                  <span className="font-mono text-xs text-slate-500">
+                    {imageCrop.zoom.toFixed(2)}x
+                  </span>
                 </div>
-                <p className="dashboard-hint">
-                  Uploaded files and pasted URLs are cached to Storage when you
-                  save.
-                </p>
+                <input
+                  id="crop-zoom"
+                  type="range"
+                  min="1"
+                  max="2.5"
+                  step="0.05"
+                  value={imageCrop.zoom}
+                  onChange={(event) =>
+                    setImageCrop((current) => ({
+                      ...current,
+                      zoom: Number(event.target.value),
+                    }))
+                  }
+                  className="w-full"
+                />
               </div>
-
-              {previewUrl ? (
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/90 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="dashboard-label">Photo editor</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Reframe the square crop so faces stay centered.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setImageCrop(DEFAULT_AUTHOR_IMAGE_CROP)}
-                      className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
-                    >
-                      Reset
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
-                    <div className="dashboard-field-group">
-                      <div className="flex items-center justify-between gap-3">
-                        <label
-                          htmlFor="crop-horizontal"
-                          className="dashboard-label"
-                        >
-                          Horizontal
-                        </label>
-                        <span className="font-mono text-xs text-slate-500">
-                          {Math.round(imageCrop.centerX)}%
-                        </span>
-                      </div>
-                      <input
-                        id="crop-horizontal"
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={imageCrop.centerX}
-                        onChange={(event) =>
-                          setImageCrop((current) => ({
-                            ...current,
-                            centerX: Number(event.target.value),
-                          }))
-                        }
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="dashboard-field-group">
-                      <div className="flex items-center justify-between gap-3">
-                        <label
-                          htmlFor="crop-vertical"
-                          className="dashboard-label"
-                        >
-                          Vertical
-                        </label>
-                        <span className="font-mono text-xs text-slate-500">
-                          {Math.round(imageCrop.centerY)}%
-                        </span>
-                      </div>
-                      <input
-                        id="crop-vertical"
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={imageCrop.centerY}
-                        onChange={(event) =>
-                          setImageCrop((current) => ({
-                            ...current,
-                            centerY: Number(event.target.value),
-                          }))
-                        }
-                        className="w-full"
-                      />
-                    </div>
-
-                    <div className="dashboard-field-group">
-                      <div className="flex items-center justify-between gap-3">
-                        <label htmlFor="crop-zoom" className="dashboard-label">
-                          Zoom
-                        </label>
-                        <span className="font-mono text-xs text-slate-500">
-                          {imageCrop.zoom.toFixed(2)}x
-                        </span>
-                      </div>
-                      <input
-                        id="crop-zoom"
-                        type="range"
-                        min="1"
-                        max="2.5"
-                        step="0.05"
-                        value={imageCrop.zoom}
-                        onChange={(event) =>
-                          setImageCrop((current) => ({
-                            ...current,
-                            zoom: Number(event.target.value),
-                          }))
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-
-                  <p className="mt-3 text-xs leading-5 text-slate-500">
-                    Crop changes are applied to the stored 512x512 image when
-                    you save.
-                  </p>
-                </div>
-              ) : null}
             </div>
-          </div>
+          ) : null}
         </section>
 
-        <div className="space-y-6">
-          <section className="space-y-5 rounded-[30px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
-                Profile
-              </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                Identity
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Keep the author name and supporting metadata clean and
-                consistent.
-              </p>
-            </div>
+        <section className="space-y-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Author details
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-950">
+              Name, bio, and links
+            </h3>
+          </div>
 
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="dashboard-field-group">
               <label htmlFor="author-name" className="dashboard-label">
                 Author name
@@ -516,14 +553,13 @@ export default function AuthorEditorModal({
                 className="input input-bordered w-full text-slate-800"
               />
               <p className="dashboard-hint">
-                Use the public-facing author name exactly as it should appear in
-                the library.
+                Renaming updates matching quote rows.
               </p>
             </div>
 
             <div className="dashboard-field-group">
               <label htmlFor="amazon-page" className="dashboard-label">
-                Amazon page
+                Author page
               </label>
               <input
                 id="amazon-page"
@@ -532,51 +568,39 @@ export default function AuthorEditorModal({
                 onChange={(event) =>
                   updateDraft("amazonPage", event.target.value)
                 }
-                placeholder="https://amazon.com/..."
+                placeholder="https://..."
                 className="input input-bordered w-full text-slate-800"
               />
               <p className="dashboard-hint">
-                Optional metadata. This stays out of the main table but remains
-                editable here.
+                Optional author reference page.
               </p>
             </div>
+          </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-              {draft.updatedAt
-                ? `Last updated ${new Date(draft.updatedAt).toLocaleString()}`
-                : "Not saved yet"}
-            </div>
-          </section>
+          <div className="dashboard-field-group">
+            <label htmlFor="author-description" className="dashboard-label">
+              Bio
+            </label>
+            <textarea
+              id="author-description"
+              value={draft.description ?? ""}
+              onChange={(event) =>
+                updateDraft("description", event.target.value)
+              }
+              placeholder="Short author description"
+              className="textarea textarea-bordered min-h-[300px] w-full text-slate-800"
+            />
+            <p className="dashboard-hint">
+              Leave this empty to clear the author bio.
+            </p>
+          </div>
 
-          <section className="space-y-5 rounded-[30px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-600">
-                Writing
-              </p>
-              <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                Description
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Maintain a concise author bio. You can save an empty field if
-                you want it cleared.
-              </p>
-            </div>
-            <div className="dashboard-field-group">
-              <label className="dashboard-label">Short bio</label>
-              <textarea
-                value={draft.description ?? ""}
-                onChange={(event) =>
-                  updateDraft("description", event.target.value)
-                }
-                className="textarea textarea-bordered min-h-[220px] w-full text-slate-800"
-              />
-              <p className="dashboard-hint">
-                Aim for a clean, compact summary that works well in the
-                dashboard and the published experience.
-              </p>
-            </div>
-          </section>
-        </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {draft.updatedAt
+              ? `Last updated ${new Date(draft.updatedAt).toLocaleString()}`
+              : "Not saved yet"}
+          </div>
+        </section>
       </div>
     </EditModal>
   );

@@ -66,13 +66,15 @@ export default function DashboardFilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-w-[170px] items-center justify-between gap-4 rounded-[22px] border px-4 py-3 text-left transition ${
+      className={`inline-flex min-h-11 w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left transition sm:min-w-[170px] sm:rounded-[22px] sm:px-4 sm:py-3 ${
         active ? toneClasses.active : toneClasses.inactive
       }`}
     >
-      <span className="text-sm font-semibold">{label}</span>
+      <span className="text-xs font-semibold leading-4 sm:text-sm sm:leading-5">
+        {label}
+      </span>
       <span
-        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] sm:px-2.5 sm:py-1 sm:text-[11px] sm:tracking-[0.18em] ${
           active ? toneClasses.bubbleActive : toneClasses.bubbleInactive
         }`}
       >

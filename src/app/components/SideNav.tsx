@@ -7,19 +7,10 @@ import { usePathname } from "next/navigation";
 
 const navigationSections = [
   {
-    label: "Library",
+    label: "Main",
     items: [
-      { href: "/", label: "Quotes" },
-      { href: "/authors", label: "Authors" },
-      { href: "/subjects", label: "Subject Explorer" },
-      { href: "/author-explorer", label: "Author Explorer" },
-    ],
-  },
-  {
-    label: "Workflow",
-    items: [
-      { href: "/add-quote", label: "Add Quote" },
-      { href: "/bulk-upload", label: "Bulk Upload" },
+      { href: "/", label: "Quote Manager" },
+      { href: "/bulk-upload", label: "Bulk Add Quotes" },
     ],
   },
 ];
@@ -146,7 +137,8 @@ export default function SideNav() {
           <div className="mt-8 flex-1 overflow-y-auto pr-1">{renderLinks()}</div>
 
           <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-            Keep quotes, authors, and supporting media clean from one place.
+            Use the main page for quotes and authors. Use bulk add when you
+            have a batch to import.
           </div>
         </div>
       </aside>

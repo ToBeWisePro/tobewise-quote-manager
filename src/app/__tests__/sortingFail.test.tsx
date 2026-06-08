@@ -26,10 +26,13 @@ jest.mock('firebase/firestore', () => ({
   getDocs: jest.fn(() => Promise.resolve({ docs: [doc1, doc2] })),
   updateDoc: jest.fn(),
   deleteDoc: jest.fn(),
+  deleteField: jest.fn(() => ({ __delete: true })),
   doc: jest.fn(),
+  query: jest.fn(),
+  where: jest.fn(),
 }));
 
-jest.mock('../lib/firebase', () => ({ db: {} }));
+jest.mock('../lib/firebase', () => ({ db: {}, getFirestoreDb: jest.fn(() => ({})) }));
 
 jest.mock('../hooks/useAuth', () => ({
   useAuth: () => ({ authenticated: true, loading: false, login: jest.fn() }),
@@ -44,6 +47,35 @@ jest.mock('next/navigation', () => ({
 jest.mock('../components/SideNav', () => ({
   __esModule: true,
   default: () => <div data-testid="mock-sidenav" />,
+}));
+
+jest.mock('../components/AddQuotePanel', () => ({
+  __esModule: true,
+  default: () => <div data-testid="mock-add-quote-panel" />,
+}));
+
+jest.mock('../components/AuthorEditorModal', () => ({
+  __esModule: true,
+  default: () => <div data-testid="mock-author-editor" />,
+}));
+
+jest.mock('../lib/ensureAuthorProfile', () => ({
+  ensureAuthorProfile: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock('../lib/authorProfile', () => ({
+  cacheAuthorImageFromUrl: jest.fn(),
+  deleteStoredAuthorImage: jest.fn(),
+  getStoredAssetPathFromUrl: jest.fn(() => null),
+  inferImageSource: jest.fn(() => 'upload'),
+  normalizeAuthorImageCrop: jest.fn(() => ({
+    centerX: 50,
+    centerY: 25,
+    zoom: 1,
+  })),
+  resolveAuthorImageCandidate: jest.fn(),
+  uploadAuthorImageBlob: jest.fn(),
+  uploadOriginalAuthorImageBlob: jest.fn(),
 }));
 
 import Home from '../page';

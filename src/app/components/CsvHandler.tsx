@@ -4,9 +4,10 @@ import React, { useState } from 'react';
 import { Quote } from '../types/Quote';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { extractQuotesFromImages } from '../lib/extractQuotesFromImages';
 
 interface CsvHandlerProps {
-  onImport: (quotes: Quote[]) => void;
+  onImport: (quotes: Quote[]) => Promise<Quote[] | void> | Quote[] | void;
   quotes: Quote[];
 }
 
@@ -15,9 +16,10 @@ interface ValidationError {
   errors: string[];
 }
 
-interface EditableQuote extends Quote {
+interface EditableQuote extends Omit<Quote, "id"> {
+  id?: string;
   isEditing?: boolean;
-  originalQuote?: Quote;
+  originalQuote?: EditableQuote;
 }
 
 interface DuplicateQuote {
@@ -38,7 +40,17 @@ type CsvRow = {
   videoLink?: string;
 };
 
-const normalizeQuote = (quote: Quote) => ({
+const normalizeQuote = (
+  quote: Pick<
+    Quote,
+    | "author"
+    | "quoteText"
+    | "authorLink"
+    | "contributedBy"
+    | "subjects"
+    | "videoLink"
+  >,
+) => ({
   author: quote.author.trim(),
   quoteText: quote.quoteText.trim(),
   authorLink: quote.authorLink?.trim() ?? "",
@@ -49,6 +61,18 @@ const normalizeQuote = (quote: Quote) => ({
 
 const areStringArraysEqual = (left: string[], right: string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
+
+const toImportQuote = (quote: EditableQuote): Quote => ({
+  id: quote.id ?? `import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  author: quote.author,
+  quoteText: quote.quoteText,
+  subjects: quote.subjects,
+  authorLink: quote.authorLink,
+  contributedBy: quote.contributedBy,
+  videoLink: quote.videoLink,
+  createdAt: quote.createdAt,
+  updatedAt: quote.updatedAt,
+});
 
 export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   const [previewData, setPreviewData] = useState<EditableQuote[]>([]);
@@ -80,6 +104,15 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
     link.download = 'quotes_template.csv';
     link.click();
   };
+
+  const allKnownSubjects = () =>
+    Array.from(
+      new Set(
+        quotes.flatMap((quote) =>
+          quote.subjects.map((subject) => subject.trim().toLowerCase()),
+        ),
+      ),
+    ).filter(Boolean);
 
   const validateQuote = (quote: CsvRow, rowIndex: number): ValidationError | null => {
     const errors: string[] = [];
@@ -134,11 +167,34 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
 
     setIsProcessing(true);
     try {
+      const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+      if (imageFiles.length > 0) {
+        const extractedQuotes = await extractQuotesFromImages(
+          imageFiles,
+          allKnownSubjects(),
+        );
+
+        if (!extractedQuotes.length) {
+          throw new Error('No quotes were found in those image files.');
+        }
+
+        setPreviewData(
+          extractedQuotes.map((quote) => ({
+            id: `preview-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            ...quote,
+          })),
+        );
+        setShowPreview(true);
+        setValidationErrors([]);
+        return;
+      }
+
+      const file = files[0];
       let csvContent: string;
       const fileType = file.name.split('.').pop()?.toLowerCase();
 
@@ -153,8 +209,8 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
       Papa.parse(csvContent, {
         header: true,
         skipEmptyLines: true,
-        transformHeader: (header) => header.trim(),
-        complete: (results) => {
+        transformHeader: (header: string) => header.trim(),
+        complete: (results: { data: CsvRow[] }) => {
           const errors: ValidationError[] = [];
           const validQuotes: EditableQuote[] = [];
 
@@ -194,7 +250,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
             setValidationErrors([]);
           }
         },
-        error: (error) => {
+        error: (error: { message: string }) => {
           setValidationErrors([{ row: 0, errors: ['Error parsing file: ' + error.message] }]);
           setShowErrorDialog(true);
         }
@@ -204,6 +260,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
       setShowErrorDialog(true);
     } finally {
       setIsProcessing(false);
+      event.target.value = '';
     }
   };
 
@@ -294,10 +351,9 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
 
   const proceedWithImport = async () => {
     try {
-      const result = await onImport(previewData);
+      const result = await onImport(previewData.map(toImportQuote));
       if (result && Array.isArray(result)) {
         setImportedQuotes(result);
-        setImportedCount(result.length);
       }
       setPreviewData([]);
       setShowPreview(false);
@@ -330,7 +386,7 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
 
     setPreviewData(uniqueQuotes);
     try {
-      const result = await onImport(uniqueQuotes);
+      const result = await onImport(uniqueQuotes.map(toImportQuote));
       if (result && Array.isArray(result)) {
         setImportedQuotes(result);
       }
@@ -350,27 +406,48 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-4">
-        <button
-          onClick={downloadTemplate}
-          className="bg-primary text-white px-4 py-2 rounded shadow"
-        >
-          Download Template
-        </button>
-        <div className="flex gap-4 items-center">
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls,.numbers"
-            onChange={handleFileUpload}
-            className="file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white hover:file:bg-secondary file:transition-colors file:duration-200"
-          />
-          {isProcessing && (
-            <div className="flex items-center gap-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-              <span className="text-sm text-gray-600">Processing file...</span>
+    <div className="space-y-5">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white">
+            AI
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="rounded-lg bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+              Add CSV, Excel, Numbers, or image files. I will read the quotes,
+              show you a preview, then import only after you approve.
             </div>
-          )}
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-5 text-center transition hover:border-blue-300 hover:bg-blue-50/40">
+                <span className="text-sm font-semibold text-slate-800">
+                  Add quote files
+                </span>
+                <span className="mt-1 text-xs text-slate-500">
+                  PNG, JPG, WebP, CSV, XLSX, XLS, or Numbers
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  accept=".csv,.xlsx,.xls,.numbers,image/png,image/jpeg,image/webp"
+                  onChange={handleFileUpload}
+                  className="sr-only"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+              >
+                CSV template
+              </button>
+            </div>
+            {isProcessing && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-slate-950" />
+                <span>Reading files...</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -415,108 +492,122 @@ export default function CsvHandler({ onImport, quotes }: CsvHandlerProps) {
       )}
 
       {showPreview && (
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold mb-2 text-gray-800">Preview ({previewData.length} quotes)</h3>
-          <div className="overflow-x-auto bg-white shadow-md rounded-lg">
-            <table className="table-auto w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-800 text-white">
-                  <th className="px-4 py-2 border-r border-gray-600 font-medium">Author</th>
-                  <th className="px-4 py-2 border-r border-gray-600 font-medium">Quote</th>
-                  <th className="px-4 py-2 border-r border-gray-600 font-medium">Subjects</th>
-                  <th className="px-4 py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {previewData.slice(0, 5).map((quote, i) => (
-                  <tr key={i} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2 border-r border-gray-200 text-gray-800">
-                      {quote.isEditing ? (
-                        <input
-                          type="text"
-                          value={quote.author}
-                          onChange={(e) => handleChange(i, 'author', e.target.value)}
-                          className="input input-bordered w-full text-gray-800"
-                        />
-                      ) : (
-                        <span className="font-medium">{quote.author}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 border-r border-gray-200 text-gray-800">
-                      {quote.isEditing ? (
-                        <textarea
-                          value={quote.quoteText}
-                          onChange={(e) => handleChange(i, 'quoteText', e.target.value)}
-                          className="textarea textarea-bordered w-full text-gray-800"
-                        />
-                      ) : (
-                        quote.quoteText
-                      )}
-                    </td>
-                    <td className="px-4 py-2 border-r border-gray-200 text-gray-800">
-                      {quote.isEditing ? (
-                        <input
-                          type="text"
-                          value={quote.subjects.join(', ')}
-                          onChange={(e) => handleChange(i, 'subjects', e.target.value)}
-                          className="input input-bordered w-full text-gray-800"
-                          placeholder="Comma-separated subjects"
-                        />
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {quote.subjects.map((subject, subIndex) => (
-                            <span
-                              key={subIndex}
-                              className="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-sm"
-                            >
-                              {subject}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-gray-800">
-                      {quote.isEditing ? (
-                        <button
-                          onClick={() => handleSave(i)}
-                          disabled={!hasPreviewQuoteChanges(quote)}
-                          className={`mr-2 rounded px-2 py-1 text-white ${
-                            hasPreviewQuoteChanges(quote)
-                              ? "bg-green-500 hover:bg-green-600"
-                              : "cursor-not-allowed bg-gray-300"
-                          }`}
-                        >
-                          Save
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleEdit(i)}
-                          className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 mr-2"
-                        >
-                          Edit
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(i)}
-                        className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">
+              Preview ({previewData.length} quotes)
+            </h3>
+            <button
+              onClick={handleImport}
+              className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            >
+              Import Quotes
+            </button>
           </div>
-          {previewData.length > 5 && (
-            <p className="mt-2 text-sm text-gray-600">Showing first 5 of {previewData.length} quotes</p>
+          <div className="grid gap-3">
+            {previewData.slice(0, 10).map((quote, i) => (
+              <article
+                key={quote.id ?? `${quote.author}-${i}`}
+                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                {quote.isEditing ? (
+                  <div className="grid gap-3">
+                    <div className="dashboard-field-group">
+                      <label className="dashboard-label">Author</label>
+                      <input
+                        type="text"
+                        value={quote.author}
+                        onChange={(event) =>
+                          handleChange(i, 'author', event.target.value)
+                        }
+                        className="input input-bordered w-full text-slate-800"
+                      />
+                    </div>
+                    <div className="dashboard-field-group">
+                      <label className="dashboard-label">Quote</label>
+                      <textarea
+                        value={quote.quoteText}
+                        onChange={(event) =>
+                          handleChange(i, 'quoteText', event.target.value)
+                        }
+                        className="textarea textarea-bordered min-h-28 w-full text-slate-800"
+                      />
+                    </div>
+                    <div className="dashboard-field-group">
+                      <label className="dashboard-label">Subjects</label>
+                      <input
+                        type="text"
+                        value={quote.subjects.join(', ')}
+                        onChange={(event) =>
+                          handleChange(i, 'subjects', event.target.value)
+                        }
+                        className="input input-bordered w-full text-slate-800"
+                        placeholder="Comma-separated subjects"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-[0.85fr_1.15fr]">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Author
+                      </p>
+                      <p className="mt-1 font-semibold text-slate-950">
+                        {quote.author}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {quote.subjects.map((subject, subIndex) => (
+                          <span
+                            key={`${subject}-${subIndex}`}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            {subject}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-sm leading-6 text-slate-800">
+                      {quote.quoteText}
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                  {quote.isEditing ? (
+                    <button
+                      onClick={() => handleSave(i)}
+                      disabled={!hasPreviewQuoteChanges(quote)}
+                      className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${
+                        hasPreviewQuoteChanges(quote)
+                          ? "bg-green-600 hover:bg-green-700"
+                          : "cursor-not-allowed bg-slate-300"
+                      }`}
+                    >
+                      Save
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleEdit(i)}
+                      className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(i)}
+                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {previewData.length > 10 && (
+            <p className="text-sm text-slate-500">
+              Showing first 10 of {previewData.length} quotes.
+            </p>
           )}
-          <button
-            onClick={handleImport}
-            className="mt-4 bg-primary text-white hover:bg-secondary px-4 py-2 rounded-lg shadow transition-colors duration-200"
-          >
-            Import Quotes
-          </button>
         </div>
       )}
 

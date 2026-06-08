@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { Author } from "../types/Author";
-import {
-  inferImageSource,
-  type ResolvedAuthorImage,
-} from "../lib/authorProfile";
+import { inferImageSource } from "../lib/authorProfile";
 import AuthorEditorModal, {
   AuthorEditorSavePayload,
 } from "./AuthorEditorModal";
@@ -13,9 +10,6 @@ import AuthorEditorModal, {
 interface EditableAuthorRowProps {
   author: Author;
   onSave: (payload: AuthorEditorSavePayload) => Promise<void> | void;
-  onFindPhoto: (author: Author) => Promise<void> | void;
-  onAutoFetchImage: (authorName: string) => Promise<ResolvedAuthorImage | null>;
-  isFindingPhoto?: boolean;
   columnWidths: {
     author: number;
     photo: number;
@@ -68,9 +62,6 @@ const getStatusBadges = (author: Author) => {
 export default function EditableAuthorRow({
   author,
   onSave,
-  onFindPhoto,
-  onAutoFetchImage,
-  isFindingPhoto = false,
   columnWidths,
 }: EditableAuthorRowProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -128,14 +119,7 @@ export default function EditableAuthorRow({
               onClick={() => setModalOpen(true)}
               className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
             >
-              Manage
-            </button>
-            <button
-              onClick={() => onFindPhoto(author)}
-              disabled={isFindingPhoto}
-              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isFindingPhoto ? "Searching..." : author.profile_url ? "Refresh Photo" : "Find Photo"}
+              Edit author
             </button>
           </div>
         </td>
@@ -146,7 +130,6 @@ export default function EditableAuthorRow({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={onSave}
-        onAutoFetchImage={onAutoFetchImage}
       />
     </>
   );

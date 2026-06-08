@@ -30,6 +30,11 @@ export interface AuthorImageCrop {
   zoom: number;
 }
 
+export interface AuthorImageDimensions {
+  width: number;
+  height: number;
+}
+
 export const DEFAULT_AUTHOR_IMAGE_CROP: AuthorImageCrop = {
   centerX: 50,
   // Start higher in the frame so new author images keep faces in view by default.
@@ -58,6 +63,20 @@ const buildVersionedAuthorAssetPath = (
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+const getModelResponseText = (response: unknown) => {
+  if (typeof response === "string") return response;
+
+  if (typeof response === "object" && response !== null) {
+    const message = response as { content?: unknown; text?: unknown };
+    const value = message.content ?? message.text;
+
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map(String).join(" ");
+  }
+
+  return String(response);
+};
+
 export const normalizeAuthorImageCrop = (
   author?: Partial<
     Pick<Author, "imageCropX" | "imageCropY" | "imageCropZoom">
@@ -75,6 +94,72 @@ export const normalizeAuthorImageCrop = (
   ),
   zoom: clamp(author?.imageCropZoom ?? DEFAULT_AUTHOR_IMAGE_CROP.zoom, 1, 2.5),
 });
+
+export const getAuthorImageCropWindow = (
+  dimensions: AuthorImageDimensions,
+  crop: AuthorImageCrop = DEFAULT_AUTHOR_IMAGE_CROP,
+) => {
+  const width = Math.max(1, dimensions.width);
+  const height = Math.max(1, dimensions.height);
+  const normalizedCrop = normalizeAuthorImageCrop({
+    imageCropX: crop.centerX,
+    imageCropY: crop.centerY,
+    imageCropZoom: crop.zoom,
+  });
+  const baseSize = Math.min(width, height);
+  const size = Math.max(1, Math.min(baseSize / normalizedCrop.zoom, baseSize));
+  const centerX = (normalizedCrop.centerX / 100) * width;
+  const centerY = (normalizedCrop.centerY / 100) * height;
+  const sx = clamp(centerX - size / 2, 0, Math.max(width - size, 0));
+  const sy = clamp(centerY - size / 2, 0, Math.max(height - size, 0));
+
+  return { sx, sy, size, normalizedCrop };
+};
+
+export const moveAuthorImageCrop = ({
+  crop,
+  dimensions,
+  frameSize,
+  deltaX,
+  deltaY,
+}: {
+  crop: AuthorImageCrop;
+  dimensions: AuthorImageDimensions;
+  frameSize: number;
+  deltaX: number;
+  deltaY: number;
+}): AuthorImageCrop => {
+  const width = Math.max(1, dimensions.width);
+  const height = Math.max(1, dimensions.height);
+  const normalizedCrop = normalizeAuthorImageCrop({
+    imageCropX: crop.centerX,
+    imageCropY: crop.centerY,
+    imageCropZoom: crop.zoom,
+  });
+  const { size } = getAuthorImageCropWindow(dimensions, normalizedCrop);
+  const displayScale = Math.max(1, frameSize) / size;
+  const nextCenterX =
+    ((normalizedCrop.centerX / 100) * width - deltaX / displayScale) / width;
+  const nextCenterY =
+    ((normalizedCrop.centerY / 100) * height - deltaY / displayScale) / height;
+  const clampCenter = (
+    nextCenter: number,
+    currentCenter: number,
+    length: number,
+  ) => {
+    if (length <= size) return currentCenter;
+
+    const minCenter = (size / 2 / length) * 100;
+    const maxCenter = ((length - size / 2) / length) * 100;
+    return clamp(nextCenter * 100, minCenter, maxCenter);
+  };
+
+  return {
+    ...normalizedCrop,
+    centerX: clampCenter(nextCenterX, normalizedCrop.centerX, width),
+    centerY: clampCenter(nextCenterY, normalizedCrop.centerY, height),
+  };
+};
 
 export const extractUrl = (text: string) => {
   const match = text.match(/https?:\/\/[^\s]+/i);
@@ -139,8 +224,10 @@ export const squareImageBlob = async (
     imageCropY: crop.centerY,
     imageCropZoom: crop.zoom,
   });
-  const baseSize = Math.min(bitmap.width, bitmap.height);
-  const size = Math.max(1, Math.min(baseSize / normalizedCrop.zoom, baseSize));
+  const { sx, sy, size } = getAuthorImageCropWindow(
+    { width: bitmap.width, height: bitmap.height },
+    normalizedCrop,
+  );
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 512;
@@ -148,10 +235,6 @@ export const squareImageBlob = async (
   const context = canvas.getContext("2d");
   if (!context) return blob;
 
-  const centerX = (normalizedCrop.centerX / 100) * bitmap.width;
-  const centerY = (normalizedCrop.centerY / 100) * bitmap.height;
-  const sx = clamp(centerX - size / 2, 0, Math.max(bitmap.width - size, 0));
-  const sy = clamp(centerY - size / 2, 0, Math.max(bitmap.height - size, 0));
   context.drawImage(bitmap, sx, sy, size, size, 0, 0, 512, 512);
 
   return new Promise((resolve) => {
@@ -323,12 +406,7 @@ export const resolveAiDiscoveredImage = async ({
       const response = await flash.invoke(
         `Provide ONLY one new URL (no markdown) to a web page that contains a clear portrait or headshot of ${authorName}. Prefer official bio pages or reputable news outlets. Do not repeat a previous URL. If none found reply NONE.`,
       );
-      const pageText =
-        typeof response === "string"
-          ? response
-          : (response as any).content ||
-            (response as any).text ||
-            String(response);
+      const pageText = getModelResponseText(response);
       const pageUrl = extractUrl(pageText);
       if (!pageUrl) continue;
 
@@ -435,12 +513,7 @@ export const generateAuthorDescription = async ({
     const response = await pro.invoke(
       `Write exactly 5 sentences describing the author ${authorName}. ${quotesText}`.trim(),
     );
-    const text =
-      typeof response === "string"
-        ? response
-        : (response as any).content ||
-          (response as any).text ||
-          String(response);
+    const text = getModelResponseText(response);
     return text.replace(/\n/g, " ").trim() || null;
   } catch (error) {
     console.warn("Description generation failed", error);
